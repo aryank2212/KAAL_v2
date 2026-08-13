@@ -1,16 +1,20 @@
 import cv2
+import logging
 from ultralytics import YOLO
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 # 1. Load the model (We're using YOLOv8m here, but you can swap this with your 'best.pt' once fully trained)
 model_path = r"D:\Github\Hackathons\KAAL\MODEL\yolov8m.pt"
-print(f"Loading model: {model_path}")
+logger.info("Loading model: %s", model_path)
 model = YOLO(model_path)
 
 # 2. Specify the image you want to test (You can also pass a web-cam ID like '0', or a video file path)
 # I've grabbed one of your aircraft test images as an example!
 image_path = r"D:\teest\1.jpeg"
 
-print(f"Running inference on: {image_path}...")
+logger.info("Running inference on: %s...", image_path)
 
 # 3. Run the prediction
 results = model.predict(
@@ -25,22 +29,22 @@ results = model.predict(
 )
 
 # 4. How to extract and process the raw output data yourself
-print("\n--- RESULTS DATA ---")
+logger.info("\n--- RESULTS DATA ---")
 for result in results:
     boxes = result.boxes
-    print(f"Found {len(boxes)} objects in the image.\n")
-    
+    logger.info("Found %d objects in the image.\n", len(boxes))
+
     for box in boxes:
         # Extract Box Data
         cls_id = int(box.cls[0].item())            # Class ID (0-based index)
         conf = float(box.conf[0].item())           # Confidence score (0.0 to 1.0)
         xyxy = box.xyxy[0].cpu().numpy()           # Coordinates [x1, y1, x2, y2]
-        
-        class_name = model.names[cls_id]           # Get actual class name from the model's dictionary
-        
-        print(f"➤ Object:  {class_name}")
-        print(f"  Conf:    {conf * 100:.1f}%")
-        print(f"  Coords:  [{xyxy[0]:.1f}, {xyxy[1]:.1f}, {xyxy[2]:.1f}, {xyxy[3]:.1f}]\n")
 
-print(f"\nImage successfully saved to: {results[0].save_dir}")
-print("Finished!")
+        class_name = model.names[cls_id]           # Get actual class name from the model's dictionary
+
+        logger.info("➤ Object:  %s", class_name)
+        logger.info("  Conf:    %.1f%%", conf * 100)
+        logger.info("  Coords:  [%.1f, %.1f, %.1f, %.1f]\n", *xyxy)
+
+logger.info("\nImage successfully saved to: %s", results[0].save_dir)
+logger.info("Finished!")

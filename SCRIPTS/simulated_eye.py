@@ -1,18 +1,18 @@
-import sys
 import os
 import cv2
+import logging
 import numpy as np
 import time
 from ultralytics import YOLO
 from pynput import keyboard
+from virtual_drone_controller import VirtualDroneController
 
-# Add parent directory to path so we can import KAAL modules if needed
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from SCRIPTS.virtual_drone_controller import VirtualDroneController
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 class SimulatedEye:
     def __init__(self, model_path):
-        print(f"Loading YOLO model from {model_path}...")
+        logger.info("Loading YOLO model from %s...", model_path)
         self.model = YOLO(model_path)
         self.drone = VirtualDroneController()
         
@@ -74,20 +74,20 @@ class SimulatedEye:
         return is_anomalous
 
     def run_live_feed(self):
-        print("Initializing Virtual Drone...")
+        logger.info("Initializing Virtual Drone...")
         self.drone = VirtualDroneController()
         
         # Take off
         self.drone.takeoff()
         
-        print("Ready for manual flight! Use W/A/S/D to move, R/F for Altitude, Space to Hover.")
+        logger.info("Ready for manual flight! Use W/A/S/D to move, R/F for Altitude, Space to Hover.")
         
         try:
             while True:
                 # 1. Grab frame from virtual drone
                 frame = self.drone.get_camera_feed()
                 if frame is None:
-                    print("Failed to grab frame from simulator.")
+                    logger.warning("Failed to grab frame from simulator.")
                     time.sleep(0.5)
                     continue
                 
@@ -127,9 +127,9 @@ class SimulatedEye:
                 # 3. Collision Detection Check
                 collision_info = self.drone.client.simGetCollisionInfo()
                 if collision_info.has_collided:
-                    cv2.putText(frame, "CRASHED! PRESS BACKSPACE IN 3D WINDOW TO RESET!", (50, int(h/2)), 
+                    cv2.putText(frame, "CRASHED! PRESS BACKSPACE IN 3D WINDOW TO RESET!", (50, frame.shape[0]//2), 
                                 cv2.FONT_HERSHEY_SIMPLEX, 0.8, (0, 0, 255), 2)
-                    print("COLLISION DETECTED! Drone physics disabled until reset.")
+                    logger.warning("COLLISION DETECTED! Drone physics disabled until reset.")
                 
                 # Render HUD
                 cv2.imshow("KAAL V2: Virtual Drone Feed", frame)
@@ -165,18 +165,18 @@ class SimulatedEye:
                     
                     if is_moving:
                         self.was_moving = True
-                        print(f"DEBUG INPUT: Sending Velocity -> X:{vx} Y:{vy} Z:{vz} Yaw:{yaw}")
+                        logger.debug("DEBUG INPUT: Sending Velocity -> X:%s Y:%s Z:%s Yaw:%s", vx, vy, vz, yaw)
                         self.drone.move_velocity_world_async(vx, vy, vz, yaw, 1000.0)
                     else:
                         if getattr(self, 'was_moving', False) or ' ' in self.keys:
-                            print(f"DEBUG INPUT: Brakes applied.")
+                            logger.debug("DEBUG INPUT: Brakes applied.")
                             self.drone.move_velocity_world_async(0, 0, 0, 0, 1.0)
                             self.was_moving = False
                     
         except KeyboardInterrupt:
-            print("Interrupted by user.")
+            logger.info("Interrupted by user.")
         finally:
-            print("Landing and cleaning up...")
+            logger.info("Landing and cleaning up...")
             cv2.destroyAllWindows()
             self.drone.land()
 

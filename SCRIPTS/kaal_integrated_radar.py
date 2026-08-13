@@ -1,11 +1,16 @@
 import cv2
 import numpy as np
 import time
+import logging
 from ultralytics import YOLO
+import os
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 # 1. Load the model
-model_path = r"D:\Github\Hackathons\KAAL\MODEL\yolov8m.pt"
-print(f"Loading YOLO model: {model_path}")
+model_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'MODEL', 'yolov8m.pt')
+logger.info("Loading YOLO model: %s", model_path)
 model = YOLO(model_path)
 
 # --- DISTANCE ESTIMATION CONSTANTS ---
@@ -58,7 +63,7 @@ def analyze_frequency(frame):
 
 def run_integrated_radar(output_path="kaal_output_video.mp4"):
     cap = cv2.VideoCapture(0)
-    print("🚀 KAAL INTEGRATED RADAR (YOLO + FFT) ONLINE. PRESS 'q' TO QUIT.")
+    logger.info("🚀 KAAL INTEGRATED RADAR (YOLO + FFT) ONLINE. PRESS 'q' TO QUIT.")
     
     # Define the codec and create VideoWriter object
     fourcc = cv2.VideoWriter_fourcc(*'mp4v')
@@ -117,17 +122,17 @@ def run_integrated_radar(output_path="kaal_output_video.mp4"):
         color = (0, 0, 255) if is_attack else (0, 255, 0)
         
         # --- REAL-TIME TERMINAL REPORT ---
-        print(f"\n[FRAME {frame_count:04d} | {timestamp}]")
-        print(f"📡 STATUS: {status_text}")
-        print(f"📊 NOISE SCORE: {noise_score:.2f}")
+        logger.info("\n[FRAME %04d | %s]", frame_count, timestamp)
+        logger.info("📡 STATUS: %s", status_text)
+        logger.info("📊 NOISE SCORE: %.2f", noise_score)
         
         if detections_report:
-            print(f"🎯 TARGETS DETECTED ({len(detections_report)}):")
+            logger.info("🎯 TARGETS DETECTED (%d):", len(detections_report))
             for det in detections_report:
-                print(f"   - {det}")
+                logger.info("   - %s", det)
         else:
-            print("🔭 TARGETS: NONE")
-        print("-" * 40)
+            logger.info("🔭 TARGETS: NONE")
+        logger.info("-" * 40)
 
         # Draw on the YOLO output frame
         cv2.putText(out_frame, f"FFT NOISE SCORE: {noise_score:.1f}", (10, 30), 
@@ -147,7 +152,7 @@ def run_integrated_radar(output_path="kaal_output_video.mp4"):
         if out_video is None:
             height, width, _ = combined_output.shape
             out_video = cv2.VideoWriter(output_path, fourcc, 20.0, (width, height))
-            print(f"Recording to: {output_path}")
+            logger.info("Recording to: %s", output_path)
 
         # Save the combined frame to the video file
         out_video.write(combined_output)

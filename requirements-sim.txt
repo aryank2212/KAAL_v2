@@ -1,0 +1,6 @@
+# KAAL Simulation Scripts — Dependencies
+# Install alongside core requirements:
+#   pip install -r MODEL/requirements.txt -r requirements-sim.txt
+
+airsim>=1.8.1
+pynput>=1.7.6

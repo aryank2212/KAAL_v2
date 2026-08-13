@@ -2,7 +2,16 @@ import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import KaalSwarmCanvas from "./KaalSwarmCanvas";
 
-function MainPanel({ image, selectedModel, isRunning, swarmData = {}, onSwarmData }) {
+function MainPanel({
+  image,
+  selectedModel,
+  isRunning,
+  swarmData = {},
+  onSwarmData,
+  detections = [],
+  attack = false,
+  alertActive = false,
+}) {
   const [isVideo, setIsVideo] = useState(false);
   const [coords, setCoords] = useState({ lat: 28.6139, lon: 77.209 });
 
@@ -16,6 +25,8 @@ function MainPanel({ image, selectedModel, isRunning, swarmData = {}, onSwarmDat
     }, 2000);
     return () => clearInterval(interval);
   }, [isRunning]);
+
+  const flagged = detections.filter((d) => d.is_adversarial);
 
   return (
     <motion.div
@@ -48,7 +59,11 @@ function MainPanel({ image, selectedModel, isRunning, swarmData = {}, onSwarmDat
       </div>
 
       {/* Feed viewport */}
-      <div className="relative flex-1 scanlines rounded-xl overflow-hidden border border-blue-500/10 bg-black">
+      <div
+        className={`relative flex-1 scanlines rounded-xl overflow-hidden border bg-black ${
+          attack ? "border-rose-500/60" : "border-blue-500/10"
+        } ${alertActive ? "animate-pulse" : ""}`}
+      >
         {isVideo ? (
           <div className="w-full h-full relative z-0">
             <KaalSwarmCanvas onTelemetry={onSwarmData} />
@@ -138,6 +153,37 @@ function MainPanel({ image, selectedModel, isRunning, swarmData = {}, onSwarmDat
 
         {/* Top vignette */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-transparent pointer-events-none" />
+
+        {/* ADVERSARIAL ALERT banner */}
+        {attack && (
+          <motion.div
+            initial={{ opacity: 0, y: -16 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="absolute top-2 left-1/2 -translate-x-1/2 flex items-center gap-2 px-3 py-1 rounded bg-rose-600/90 border border-rose-300/50 shadow-[0_0_20px_rgba(244,63,94,0.6)]"
+          >
+            <div className="w-2 h-2 rounded-full bg-white animate-ping" />
+            <span className="text-[10px] tracking-[3px] font-bold text-white" style={{ fontFamily: "var(--font-display)" }}>
+              ADVERSARIAL ATTACK DETECTED
+            </span>
+          </motion.div>
+        )}
+
+        {/* Flagged detection readout */}
+        {flagged.length > 0 && (
+          <div className="absolute top-10 right-3 flex flex-col gap-1 z-10">
+            {flagged.map((d, i) => (
+              <div
+                key={`${d.label}-${i}`}
+                className="px-2 py-1 rounded bg-black/70 border border-rose-500/40 text-right"
+              >
+                <span className="text-[9px] text-rose-300 font-medium" style={{ fontFamily: "var(--font-mono)" }}>
+                  {d.label.toUpperCase()}{" "}
+                  <span className="text-rose-400">▲ {d.anomaly_score?.toFixed(3)}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
       </div>
     </motion.div>
   );

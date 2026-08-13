@@ -8,10 +8,13 @@ Wraps Ultralytics YOLO training to support three defense modes:
 """
 
 import os
+import logging
 from ultralytics import YOLO
 
-from config import Config, DefenseMode
-from dataset import DatasetPreparer
+from .config import Config, DefenseMode
+from .dataset import DatasetPreparer
+
+logger = logging.getLogger(__name__)
 
 
 class AdversarialTrainer:
@@ -30,7 +33,7 @@ class AdversarialTrainer:
 
     def setup(self):
         """Load the pretrained model and prepare the dataset."""
-        print(f"[Trainer] Loading pretrained model: {self.config.model_weights}")
+        logger.info(f"Loading pretrained model: {self.config.model_weights}")
         self.model = YOLO(self.config.model_weights)
 
         # Prepare adversarial dataset if defense mode requires it
@@ -41,13 +44,13 @@ class AdversarialTrainer:
             # Check for existing augmented dataset
             aug_yaml = os.path.join(self.config.output_dir, "augmented_dataset", "data.yaml")
             if os.path.exists(aug_yaml):
-                print(f"[Trainer] Using existing augmented dataset: {aug_yaml}")
+                logger.info(f"Using existing augmented dataset: {aug_yaml}")
                 self.training_data_yaml = aug_yaml
             else:
-                print("[Trainer] Preparing adversarial-augmented dataset...")
+                logger.info("Preparing adversarial-augmented dataset...")
                 self.training_data_yaml = self.dataset_preparer.prepare_augmented_dataset()
         else:
-            print("[Trainer] Using clean dataset (no adversarial augmentation)")
+            logger.info("Using clean dataset (no adversarial augmentation)")
             self.training_data_yaml = self.config.data_yaml
 
     def train(self) -> str:
@@ -64,22 +67,17 @@ class AdversarialTrainer:
         project_dir = os.path.join(self.config.output_dir, "train")
         os.makedirs(project_dir, exist_ok=True)
 
-        print(f"\n{'='*60}")
-        print(f"  Training Configuration")
-        print(f"{'='*60}")
-        print(f"  Data:          {self.training_data_yaml}")
-        print(f"  Model:         {self.config.model_weights}")
-        print(f"  Epochs:        {self.config.epochs}")
-        print(f"  Batch size:    {self.config.batch_size}")
-        print(f"  Learning rate: {self.config.lr}")
-        print(f"  Image size:    {self.config.imgsz}")
-        print(f"  Device:        {self.config.device}")
-        print(f"  Defense mode:  {self.config.defense_mode.value}")
-        print(f"{'='*60}\n")
+        logger.info(
+            f"Training Configuration: data={self.training_data_yaml}, "
+            f"model={self.config.model_weights}, epochs={self.config.epochs}, "
+            f"batch={self.config.batch_size}, lr={self.config.lr}, "
+            f"imgsz={self.config.imgsz}, device={self.config.device}, "
+            f"defense={self.config.defense_mode.value}"
+        )
 
         # Launch Ultralytics training (with robust parameters to prevent fragmentation)
-        resume_training = self.config.model_weights.endswith("last.pt")
-        results = self.model.train(
+        resume_training = self.config.resume or self.config.model_weights.endswith("last.pt")
+        self.model.train(
             data=self.training_data_yaml,
             epochs=self.config.epochs,
             batch=self.config.batch_size,
@@ -94,23 +92,19 @@ class AdversarialTrainer:
             cos_lr=True,
             mosaic=1.0,
             mixup=0.2,
-            multi_scale=False, # Disable to prevent ZeroDivisionError in some environments
-            workers=0,         # Prevent Windows memory/paging errors
+            multi_scale=False,  # Disable to prevent ZeroDivisionError in some environments
+            workers=0,  # Prevent Windows memory/paging errors
             resume=resume_training,
         )
 
         # Locate best weights
-        best_weights = os.path.join(
-            project_dir, "adversarial_finetune", "weights", "best.pt"
-        )
+        best_weights = os.path.join(project_dir, "adversarial_finetune", "weights", "best.pt")
         if os.path.exists(best_weights):
-            print(f"\n[Trainer] Best weights saved to: {best_weights}")
+            logger.info(f"Best weights saved to: {best_weights}")
         else:
             # Fallback to last weights
-            best_weights = os.path.join(
-                project_dir, "adversarial_finetune", "weights", "last.pt"
-            )
-            print(f"\n[Trainer] Weights saved to: {best_weights}")
+            best_weights = os.path.join(project_dir, "adversarial_finetune", "weights", "last.pt")
+            logger.info(f"Weights saved to: {best_weights}")
 
         return best_weights
 

@@ -1,0 +1,10 @@
+# KAAL Backend Server — Dependencies
+# Install alongside core requirements:
+#   pip install -r MODEL/requirements.txt -r requirements-server.txt
+
+fastapi>=0.104.0
+uvicorn>=0.24.0
+# Real system metrics (falls back to /proc if absent)
+psutil>=5.9.0
+# WebSocket transport for the /ws endpoint
+websockets>=12.0

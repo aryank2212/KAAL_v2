@@ -4,9 +4,13 @@ A production-quality pipeline for fine-tuning YOLOv8 with adversarial patch robu
 
 ## Features
 
-- **Adversarial patch injection** — noise, structured patterns, or custom patch images
+- **Adversarial patch injection** — noise, structured patterns, gradient-optimized, or custom patch images
 - **Mixed training** — fine-tune on both clean and adversarial-augmented images
 - **Dual-stream defense** — FFT-based anomaly detection fused with YOLO predictions
+- **Per-region detection** — individual objects flagged, not just whole frames
+- **Adaptive calibration** — threshold auto-tuned per camera/environment from clean images
+- **Physical-world realism** — perspective-warped, relit patches; low-frequency perturbations
+- **Ablation harness** — sweeps thresholds/patch params, exports paper-ready curves
 - **Three defense modes** — switch between no defense, adversarial training only, or full dual-stream
 - **Comprehensive evaluation** — mAP on clean, attacked, and defended scenarios
 - **Visualizations** — before/after attacks, annotated predictions, confusion matrices
@@ -17,14 +21,19 @@ A production-quality pipeline for fine-tuning YOLOv8 with adversarial patch robu
 
 ```
 MODEL/
+├── __init__.py                # Package init
 ├── config.py                  # Centralized configuration (hyperparams, paths, thresholds)
 ├── adversarial_patch.py       # Patch generation, placement, and probabilistic injection
+├── augmentations.py           # Attack augmentation functions (patch, noise, occlusion, low-freq)
+├── fft_scorer.py              # Standalone 2D-FFT anomaly scoring (model-free)
+├── calibration.py             # Adaptive FFT threshold calibration per environment
 ├── dataset.py                 # YOLO-format dataset loading + augmentation pipeline
 ├── trainer.py                 # Fine-tuning: clean + adversarial mixed training
 ├── dual_stream_defense.py     # FFT anomaly detection + fusion with YOLO predictions
 ├── evaluator.py               # mAP computation, confusion matrix, metrics reporting
+├── ablation.py                # Phase 1 hyperparameter sweep harness (paper curves)
 ├── visualizer.py              # Before/after visualization, bbox overlays, adversarial flags
-├── main.py                    # CLI entry point (train → evaluate → visualize)
+├── pipeline.py                # CLI entry point (train → evaluate)
 ├── requirements.txt           # Python dependencies
 └── README.md                  # This file
 ```
@@ -33,11 +42,22 @@ MODEL/
 
 ## Setup
 
-### 1. Install Dependencies
+### Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+pip install -e .                # core (MODEL pipeline)
+pip install -e ".[sim]"         # + AirSim simulation scripts
+pip install -e ".[server]"      # + FastAPI backend
 ```
+
+Or install the split requirements directly:
+
+```bash
+pip install -r MODEL/requirements.txt -r requirements-sim.txt -r requirements-server.txt
+```
+
+> Run the pipeline from the repo root as `python -m MODEL.pipeline` so the
+> `MODEL` package and its relative imports resolve correctly.
 
 ### 2. Prepare Your Dataset
 
@@ -74,10 +94,10 @@ names: ['car', 'person', 'bicycle']
 
 ## Usage
 
-### Full Pipeline (Train → Evaluate → Visualize)
+### Full Pipeline (Train → Evaluate)
 
 ```bash
-python main.py --data path/to/data.yaml --epochs 50 --batch 16 --lr 0.001 --defense dual_stream
+python -m MODEL.pipeline --data path/to/data.yaml --train --epochs 50 --batch 16 --defense dual_stream
 ```
 
 ### Defense Modes
@@ -90,52 +110,119 @@ python main.py --data path/to/data.yaml --epochs 50 --batch 16 --lr 0.001 --defe
 
 ```bash
 # No defense (baseline)
-python main.py --data data.yaml --defense none
+python -m MODEL.pipeline --data data.yaml --train --defense none
 
 # Adversarial training only
-python main.py --data data.yaml --defense adversarial_training
+python -m MODEL.pipeline --data data.yaml --train --defense adversarial_training
 
-# Full dual-stream defense
-python main.py --data data.yaml --defense dual_stream --fft-threshold 0.3
+# Full dual-stream defense (default)
+python -m MODEL.pipeline --data data.yaml --train --defense dual_stream
 ```
 
 ### Evaluate Only (Skip Training)
 
 ```bash
-python main.py --data data.yaml --eval-only --weights path/to/best.pt
+python -m MODEL.pipeline --data data.yaml --model path/to/best.pt
 ```
 
-### Visualize Only
+### Resume Training from Checkpoint
 
 ```bash
-python main.py --data data.yaml --vis-only --weights path/to/best.pt
+python -m MODEL.pipeline --data data.yaml --train --resume
 ```
 
 ### All CLI Options
 
 ```
---data              Path to data.yaml (default: data.yaml)
---weights           Pretrained model weights (default: yolov8n.pt)
---output            Output directory (default: runs/adversarial)
+--data              Path to data.yaml (required)
+--model             Pretrained model weights (default: yolov8n.pt)
+--train             Run training before evaluation
+--resume            Resume training from last checkpoint
+--defense           Defense mode: none/adversarial_training/dual_stream (default: dual_stream)
 --epochs            Training epochs (default: 50)
 --batch             Batch size (default: 16)
---lr                Learning rate (default: 0.001)
 --imgsz             Image size (default: 640)
 --device            Device: '0' for GPU, 'cpu' for CPU (default: 0)
---defense           Defense mode: none/adversarial_training/dual_stream
---patch-prob        Probability of patch injection (default: 0.5)
---patch-type        Patch type: noise/pattern/loaded (default: noise)
---patch-alpha       Patch blending opacity (default: 0.8)
---patch-image       Path to pre-made adversarial patch image
---fft-threshold     FFT anomaly threshold (default: 0.3)
---conf              Confidence threshold (default: 0.25)
---iou               IoU threshold for mAP (default: 0.5)
---eval-only         Skip training, evaluate only
---vis-only          Skip training + evaluation, visualize only
---skip-eval         Skip evaluation after training
---skip-vis          Skip visualizations
---num-vis           Number of visualization samples (default: 8)
+--fft-threshold     FFT anomaly threshold (default: calibration profile or 0.3)
+--high-freq-ratio   Fraction of spectrum considered high-frequency (default: 0.25)
+--frame-fft         Use whole-frame FFT only (disable per-region mode)
+--region-min-size   Skip per-region FFT for detections smaller than this (default: 16)
+--calibration       Path to a saved calibration profile (JSON)
 ```
+
+---
+
+## Phase 1: Harden the Defense
+
+### Adaptive Thresholding (calibration)
+
+The old hardcoded `fft_threshold: 0.3` is now the *fallback*. For a real
+deployment, calibrate the threshold from that camera's clean imagery:
+
+```bash
+python -m MODEL.calibration \
+    --images /path/to/clean/camera/feed \
+    --environment drone_cam_01 \
+    --output profiles/drone_cam_01.json \
+    --n 100 --method percentile --percentile 0.99
+```
+
+The profile records the score distribution (mean/std, p50/p95/p99/p99.9) and
+a recommended threshold. Point the pipeline at it with `--calibration`:
+
+```bash
+python -m MODEL.pipeline --data data.yaml --calibration profiles/drone_cam_01.json
+```
+
+Profiles are per camera/environment, so swap the JSON per deployment site.
+
+### Per-Region FFT
+
+By default the defense now scores **each detection on its own bbox crop**
+instead of flagging entire frames:
+
+- Every detection gets `anomaly_score` and `is_adversarial` fields.
+- Boxes smaller than `--region-min-size` (default 16px) are skipped as too
+  noisy to score (`region_scored: False`).
+- Overlapping detections reuse the score of their strongest overlapping box
+  instead of double-flagging.
+- `predict()` returns `objects_flagged` plus the whole-frame score.
+- Visualizer draws flagged objects in red with an `fft=` label.
+
+Disable per-region behavior with `--frame-fft` if you prefer whole-frame only.
+
+### Gradient & Physical-World Patches
+
+`PatchType.GRADIENT` produces a **gradient-optimized** patch:
+- With a detector model attached, runs PGD (torch) to suppress the model's
+  objectness confidence under the patch (evasion).
+- Without a model, produces a derivative-free **low-frequency** perturbation
+  (smooth gradient field) that is designed to slip under the FFT defense —
+  the failure case the ablation study exposes.
+
+Physical-world simulation (on by default for all patch types):
+- **Perspective warp** — patch corners jittered to simulate a sticker viewed
+  at an angle.
+- **Lighting/exposure** — random per-channel exposure, gamma, brightness and
+  contrast.
+- `patch_scale_range` now spans **5%–50%** of the bounding box (was 10–30%).
+
+`augmentations.add_low_freq_noise()` adds a smooth low-frequency perturbation
+as a first-class attack type (`lowfreq` in `apply_random_attack`).
+
+### Ablation Study
+
+Sweep the four key hyperparameters and export precision/recall/F1 curves:
+
+```bash
+python -m MODEL.ablation \
+    --images path/to/val/images \
+    --labels path/to/val/labels \
+    --output runs/ablation
+```
+
+Produces `sweep_{high_freq_ratio,fft_threshold,patch_scale_range,patch_alpha}`
+as `.csv`, `.json`, and `.png` (matplotlib) — the paper figures.
 
 ---
 
@@ -146,9 +233,13 @@ python main.py --data data.yaml --vis-only --weights path/to/best.pt
 During training, adversarial patches are injected onto objects within their bounding boxes:
 - **Noise patches**: random pixel noise acting as universal perturbation
 - **Pattern patches**: high-frequency checkerboard patterns
+- **Gradient patches**: PGD-optimized against the detector (or low-frequency
+  FFT-aware perturbations when no model is attached)
 - **Loaded patches**: custom adversarial images (e.g., printed stickers)
 
 Patches are alpha-blended within bounding boxes so annotations remain valid.
+Perspective warp and lighting/exposure variation simulate physical-world
+placement.
 
 ### 2. Dual-Stream Defense
 
@@ -157,7 +248,10 @@ At inference time, each image is processed through two streams:
 - **Stream 1 (YOLO)**: Standard object detection
 - **Stream 2 (FFT)**: Convert to frequency domain → measure high-frequency energy ratio
 
-**Fusion**: If the FFT anomaly score exceeds the threshold, the image is flagged as adversarial and predictions are marked unreliable.
+**Fusion**: If the FFT anomaly score exceeds the threshold, the image — or, in
+per-region mode, the individual detection — is flagged as adversarial and
+predictions are marked unreliable. The threshold can be calibrated per
+camera/environment via `MODEL.calibration` instead of using the fixed default.
 
 ### 3. Evaluation
 

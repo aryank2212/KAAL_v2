@@ -1,11 +1,15 @@
 import cv2
 import numpy as np
 import time
+import logging
 from ultralytics import YOLO
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 # 1. Load the model
 model_path = r"D:\Github\Hackathons\KAAL\MODEL\yolov8m.pt"
-print(f"Loading YOLO model: {model_path}")
+logger.info("Loading YOLO model: %s", model_path)
 model = YOLO(model_path)
 
 def analyze_frequency(frame):
@@ -37,7 +41,7 @@ def analyze_frequency(frame):
 
 def run_integrated_radar():
     cap = cv2.VideoCapture(0)
-    print("🚀 KAAL INTEGRATED RADAR (YOLO + FFT) ONLINE. PRESS 'q' TO QUIT.")
+    logger.info("🚀 KAAL INTEGRATED RADAR (YOLO + FFT) ONLINE. PRESS 'q' TO QUIT.")
     
     # Threshold for attack (You will need to adjust this based on your camera/lighting)
     ATTACK_THRESHOLD = 110.0 

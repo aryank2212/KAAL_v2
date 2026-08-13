@@ -1,6 +1,10 @@
 import cv2
 import numpy as np
 import time
+import logging
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(name)s] %(levelname)s: %(message)s")
+logger = logging.getLogger(__name__)
 
 def analyze_frequency(frame):
     # Convert image to grayscale (math doesn't care about color)
@@ -31,7 +35,7 @@ def analyze_frequency(frame):
 
 def run_radar():
     cap = cv2.VideoCapture(0)
-    print("KAAL FFT RADAR ONLINE. PRESS 'q' TO QUIT.")
+    logger.info("KAAL FFT RADAR ONLINE. PRESS 'q' TO QUIT.")
     
     # Threshold for attack (You will need to adjust this based on your camera/lighting)
     ATTACK_THRESHOLD = 110.0 

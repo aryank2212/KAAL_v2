@@ -1,8 +1,11 @@
 import os
 import shutil
 import yaml
+import logging
 from pathlib import Path
 from ultralytics import YOLO
+
+logger = logging.getLogger(__name__)
 
 def generate_visualizations(model_path, data_yaml):
     """
@@ -23,7 +26,7 @@ def generate_visualizations(model_path, data_yaml):
     defended_dir = base_dir / "val_defended" / "images"
     
     if not adv_dir.exists() or not defended_dir.exists():
-        print("Missing dataset directories! Please run evaluate.py first to generate adversarial sets.")
+        logger.error("Missing dataset directories! Please run evaluate.py first to generate adversarial sets.")
         return
         
     # Setup output directories per user requirements
@@ -35,19 +38,19 @@ def generate_visualizations(model_path, data_yaml):
     
     # YOLO predict creates project/name structure automatically.
     # We map 'project' to results_dir and 'name' to target folder
-    print("Running inference and visual overlay on CLEAN dataset...")
+    logger.info("Running inference and visual overlay on CLEAN dataset...")
     # save=True draws bounding boxes and labels. save_conf=True adds confidence scores.
     model.predict(source=str(clean_dir), project=str(results_dir), name="clean", save=True, save_conf=True, save_txt=False, verbose=False)
     
-    print("Running inference and visual overlay on ADVERSARIAL dataset...")
+    logger.info("Running inference and visual overlay on ADVERSARIAL dataset...")
     model.predict(source=str(adv_dir), project=str(results_dir), name="adversarial", save=True, save_conf=True, save_txt=False, verbose=False)
     
-    print("Running inference and visual overlay on DEFENDED dataset...")
+    logger.info("Running inference and visual overlay on DEFENDED dataset...")
     model.predict(source=str(defended_dir), project=str(results_dir), name="defended", save=True, save_conf=True, save_txt=False, verbose=False)
 
-    print(f"\n=========================================================")
-    print(f"Visualization complete. Results saved in: {results_dir.absolute()}")
-    print("=========================================================")
+    logger.info("\n=========================================================")
+    logger.info("Visualization complete. Results saved in: %s", results_dir.absolute())
+    logger.info("=========================================================")
 
 if __name__ == "__main__":
     import argparse

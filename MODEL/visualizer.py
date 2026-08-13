@@ -11,23 +11,41 @@ Generates:
 
 import os
 import cv2
+import logging
 import numpy as np
 from typing import List, Dict, Any, Optional, Tuple
 from pathlib import Path
 
-from config import Config
-from adversarial_patch import AdversarialPatchInjector, parse_yolo_labels
-from dual_stream_defense import DualStreamDefense
+from .config import Config
+from .adversarial_patch import AdversarialPatchInjector, parse_yolo_labels
+from .dual_stream_defense import DualStreamDefense
+
+logger = logging.getLogger(__name__)
 
 
 # ── Color Palette ─────────────────────────────────────────────────────────
 # Distinct colors for up to 20 classes (BGR)
 COLORS = [
-    (255, 77, 77), (77, 255, 77), (77, 77, 255), (255, 255, 77),
-    (255, 77, 255), (77, 255, 255), (255, 165, 0), (148, 103, 189),
-    (140, 86, 75), (227, 119, 194), (127, 127, 127), (188, 189, 34),
-    (23, 190, 207), (214, 39, 40), (44, 160, 44), (31, 119, 180),
-    (255, 127, 14), (174, 199, 232), (255, 187, 120), (152, 223, 138),
+    (255, 77, 77),
+    (77, 255, 77),
+    (77, 77, 255),
+    (255, 255, 77),
+    (255, 77, 255),
+    (77, 255, 255),
+    (255, 165, 0),
+    (148, 103, 189),
+    (140, 86, 75),
+    (227, 119, 194),
+    (127, 127, 127),
+    (188, 189, 34),
+    (23, 190, 207),
+    (214, 39, 40),
+    (44, 160, 44),
+    (31, 119, 180),
+    (255, 127, 14),
+    (174, 199, 232),
+    (255, 187, 120),
+    (152, 223, 138),
 ]
 
 
@@ -39,13 +57,17 @@ class ResultVisualizer:
     def __init__(self, config: Config, defense: DualStreamDefense):
         self.config = config
         self.defense = defense
-        self.output_dir = os.path.join(config.output_dir, "visualizations")
+        self.output_dir = config.output_dir
         os.makedirs(self.output_dir, exist_ok=True)
         self.injector = AdversarialPatchInjector(
             patch_type=config.patch_type,
             scale_range=config.patch_scale_range,
             alpha=config.patch_alpha,
             patch_image_path=config.patch_image_path,
+            use_perspective=config.patch_perspective,
+            use_lighting=config.patch_lighting,
+            grad_steps=config.patch_opt_steps,
+            grad_lr=config.patch_opt_lr,
         )
 
     # ── Before / After Adversarial Comparison ─────────────────────────────
@@ -64,8 +86,7 @@ class ResultVisualizer:
         """
         img_extensions = {".jpg", ".jpeg", ".png", ".bmp"}
         image_files = [
-            f for f in os.listdir(images_dir)
-            if Path(f).suffix.lower() in img_extensions
+            f for f in os.listdir(images_dir) if Path(f).suffix.lower() in img_extensions
         ]
         # Select a subset
         np.random.shuffle(image_files)
@@ -103,7 +124,7 @@ class ResultVisualizer:
             panels.append(panel)
 
         if not panels:
-            print("[Visualizer] No images to compare")
+            logger.warning("No images to compare")
             return ""
 
         # Stack vertically
@@ -118,7 +139,7 @@ class ResultVisualizer:
         grid = np.vstack(padded)
         output_path = os.path.join(self.output_dir, "adversarial_comparison.png")
         cv2.imwrite(output_path, grid)
-        print(f"[Visualizer] Adversarial comparison saved to: {output_path}")
+        logger.info(f"Adversarial comparison saved to: {output_path}")
         return output_path
 
     # ── Prediction Visualization ──────────────────────────────────────────
@@ -148,8 +169,13 @@ class ResultVisualizer:
                 x1, y1, x2, y2 = [int(v) for v in bbox]
                 _draw_dashed_rect(canvas, (x1, y1), (x2, y2), (180, 180, 180), thickness=1)
                 cv2.putText(
-                    canvas, f"GT:{cls_id}", (x1, y1 - 5),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (180, 180, 180), 1
+                    canvas,
+                    f"GT:{cls_id}",
+                    (x1, y1 - 5),
+                    cv2.FONT_HERSHEY_SIMPLEX,
+                    0.4,
+                    (180, 180, 180),
+                    1,
                 )
 
         # Draw predicted boxes
@@ -158,10 +184,16 @@ class ResultVisualizer:
             cls_id = det["class_id"]
             conf = det["confidence"]
             name = det["class_name"]
-            color = COLORS[cls_id % len(COLORS)]
+            # Per-region adversarial flag overrides the class color (red box)
+            if det.get("is_adversarial"):
+                color = (0, 0, 255)
+            else:
+                color = COLORS[cls_id % len(COLORS)]
 
             cv2.rectangle(canvas, (x1, y1), (x2, y2), color, 2)
             label = f"{name} {conf:.2f}"
+            if det.get("region_scored") and det.get("anomaly_score") is not None:
+                label += f" fft={det['anomaly_score']:.2f}"
             _draw_label_bg(canvas, label, (x1, y1), color)
 
         # Adversarial detection overlay
@@ -173,8 +205,7 @@ class ResultVisualizer:
         score_color = (0, 0, 255) if result["is_adversarial"] else (0, 200, 0)
         h, w = canvas.shape[:2]
         cv2.putText(
-            canvas, score_text, (w - 220, h - 15),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.5, score_color, 2
+            canvas, score_text, (w - 220, h - 15), cv2.FONT_HERSHEY_SIMPLEX, 0.5, score_color, 2
         )
 
         return canvas
@@ -196,8 +227,7 @@ class ResultVisualizer:
         """
         img_extensions = {".jpg", ".jpeg", ".png", ".bmp"}
         image_files = [
-            f for f in os.listdir(images_dir)
-            if Path(f).suffix.lower() in img_extensions
+            f for f in os.listdir(images_dir) if Path(f).suffix.lower() in img_extensions
         ]
         np.random.shuffle(image_files)
         selected = image_files[:num_samples]
@@ -216,7 +246,7 @@ class ResultVisualizer:
             class_ids, bboxes = parse_yolo_labels(label_path, img_w, img_h)
             gt_boxes = []
             for cls_id, (cx, cy, w, h) in zip(class_ids, bboxes):
-                gt_boxes.append((cls_id, [cx - w/2, cy - h/2, cx + w/2, cy + h/2]))
+                gt_boxes.append((cls_id, [cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2]))
 
             # Optionally attack
             if attack and bboxes:
@@ -236,7 +266,7 @@ class ResultVisualizer:
             panels.append(annotated)
 
         if not panels:
-            print("[Visualizer] No samples to visualize")
+            logger.warning("No samples to visualize")
             return ""
 
         # Arrange in a 2-column grid
@@ -244,7 +274,7 @@ class ResultVisualizer:
         suffix = "attacked" if attack else "clean"
         output_path = os.path.join(self.output_dir, f"sample_predictions_{suffix}.png")
         cv2.imwrite(output_path, grid)
-        print(f"[Visualizer] Sample predictions saved to: {output_path}")
+        logger.info(f"Sample predictions saved to: {output_path}")
         return output_path
 
     # ── Confusion Matrix Visualization ────────────────────────────────────
@@ -265,57 +295,83 @@ class ResultVisualizer:
         canvas = np.ones((300, 450, 3), dtype=np.uint8) * 40  # Dark background
 
         # Title
-        cv2.putText(canvas, "Detection Confusion Matrix",
-                    (50, 35), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+        cv2.putText(
+            canvas,
+            "Detection Confusion Matrix",
+            (50, 35),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            2,
+        )
 
         # Grid
         y_start = 70
         cell_w, cell_h = 150, 80
 
         # Headers
-        cv2.putText(canvas, "Predicted", (180, y_start),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        cv2.putText(canvas, "Pos", (175, y_start + 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        cv2.putText(canvas, "Neg", (325, y_start + 30),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        cv2.putText(canvas, "Actual", (20, y_start + 80),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1)
+        cv2.putText(
+            canvas, "Predicted", (180, y_start), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1
+        )
+        cv2.putText(
+            canvas, "Pos", (175, y_start + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1
+        )
+        cv2.putText(
+            canvas, "Neg", (325, y_start + 30), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1
+        )
+        cv2.putText(
+            canvas, "Actual", (20, y_start + 80), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (200, 200, 200), 1
+        )
 
         # Cells
         cells = [
-            (150, y_start + 50, tp, "TP", (0, 150, 0)),      # True Positive — green
-            (300, y_start + 50, fn, "FN", (0, 0, 180)),       # False Negative — red
-            (150, y_start + 130, fp, "FP", (0, 100, 200)),    # False Positive — orange
+            (150, y_start + 50, tp, "TP", (0, 150, 0)),  # True Positive — green
+            (300, y_start + 50, fn, "FN", (0, 0, 180)),  # False Negative — red
+            (150, y_start + 130, fp, "FP", (0, 100, 200)),  # False Positive — orange
         ]
         for x, y, val, label, color in cells:
             cv2.rectangle(canvas, (x, y), (x + cell_w, y + cell_h), color, -1)
             cv2.rectangle(canvas, (x, y), (x + cell_w, y + cell_h), (255, 255, 255), 1)
             text = f"{label}: {val}"
-            cv2.putText(canvas, text, (x + 20, y + 50),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2)
+            cv2.putText(
+                canvas, text, (x + 20, y + 50), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2
+            )
 
         # Precision / Recall
         precision = tp / (tp + fp + 1e-10)
         recall = tp / (tp + fn + 1e-10)
-        cv2.putText(canvas, f"Precision: {precision:.3f}", (30, 280),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
-        cv2.putText(canvas, f"Recall: {recall:.3f}", (250, 280),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.5, (200, 200, 200), 1)
+        cv2.putText(
+            canvas,
+            f"Precision: {precision:.3f}",
+            (30, 280),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (200, 200, 200),
+            1,
+        )
+        cv2.putText(
+            canvas,
+            f"Recall: {recall:.3f}",
+            (250, 280),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.5,
+            (200, 200, 200),
+            1,
+        )
 
         output_path = os.path.join(self.output_dir, "confusion_matrix.png")
         cv2.imwrite(output_path, canvas)
-        print(f"[Visualizer] Confusion matrix saved to: {output_path}")
+        logger.info(f"Confusion matrix saved to: {output_path}")
         return output_path
 
 
 # ── Helper Functions ──────────────────────────────────────────────────────
 
+
 def _add_label(image: np.ndarray, text: str, color: Tuple[int, int, int]):
     """Add a colored label banner at the top of an image."""
     cv2.rectangle(image, (0, 0), (image.shape[1], 30), color, -1)
-    cv2.putText(image, text, (10, 22),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
+    cv2.putText(image, text, (10, 22), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (255, 255, 255), 2)
 
 
 def _draw_label_bg(
@@ -325,8 +381,7 @@ def _draw_label_bg(
     (tw, th), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, 0.5, 1)
     x, y = origin
     cv2.rectangle(image, (x, y - th - 6), (x + tw + 4, y), color, -1)
-    cv2.putText(image, text, (x + 2, y - 4),
-                cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+    cv2.putText(image, text, (x + 2, y - 4), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
 
 
 def _draw_dashed_rect(
@@ -358,7 +413,7 @@ def _draw_dashed_line(
     dash_length: int = 8,
 ):
     """Draw a dashed line between two points."""
-    dist = np.sqrt((pt2[0] - pt1[0])**2 + (pt2[1] - pt1[1])**2)
+    dist = np.sqrt((pt2[0] - pt1[0]) ** 2 + (pt2[1] - pt1[1]) ** 2)
     if dist < 1:
         return
     n_dashes = int(dist / dash_length)
@@ -381,14 +436,17 @@ def _draw_adversarial_banner(image: np.ndarray, score: float):
     cv2.rectangle(overlay, (0, 0), (w, 40), (0, 0, 200), -1)
     cv2.addWeighted(overlay, 0.7, image, 0.3, 0, image)
     cv2.putText(
-        image, f"ADVERSARIAL DETECTED (score: {score:.3f})",
-        (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (255, 255, 255), 2
+        image,
+        f"ADVERSARIAL DETECTED (score: {score:.3f})",
+        (10, 28),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.7,
+        (255, 255, 255),
+        2,
     )
 
 
-def _make_grid(
-    panels: List[np.ndarray], ncols: int = 2, pad: int = 4
-) -> np.ndarray:
+def _make_grid(panels: List[np.ndarray], ncols: int = 2, pad: int = 4) -> np.ndarray:
     """Arrange panels in a grid with padding."""
     if not panels:
         return np.zeros((100, 100, 3), dtype=np.uint8)
@@ -399,12 +457,12 @@ def _make_grid(
 
     rows = []
     for i in range(0, len(panels), ncols):
-        row_panels = panels[i:i + ncols]
+        row_panels = panels[i : i + ncols]
         # Pad each panel to max dimensions
         padded = []
         for p in row_panels:
             canvas = np.zeros((max_h, max_w, 3), dtype=np.uint8)
-            canvas[:p.shape[0], :p.shape[1]] = p
+            canvas[: p.shape[0], : p.shape[1]] = p
             padded.append(canvas)
         # Pad row if incomplete
         while len(padded) < ncols:

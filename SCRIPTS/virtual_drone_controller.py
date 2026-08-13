@@ -1,7 +1,10 @@
 import airsim
 import time
 import sys
+import logging
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 class VirtualDroneController:
     """
@@ -9,25 +12,25 @@ class VirtualDroneController:
     and controls the virtual drone.
     """
     def __init__(self):
-        print("Connecting to Unreal Engine / AirSim...")
+        logger.info("Connecting to Unreal Engine / AirSim...")
         try:
             self.client = airsim.MultirotorClient()
             self.client.confirmConnection()
             self.client.enableApiControl(True)
             self.client.armDisarm(True)
-            print("Connected successfully!")
+            logger.info("Connected successfully!")
         except Exception as e:
-            print(f"Failed to connect to simulation: {e}")
-            print("Please ensure Unreal Engine is running and you have pressed 'Play'.")
+            logger.error("Failed to connect to simulation: %s", e)
+            logger.error("Please ensure Unreal Engine is running and you have pressed 'Play'.")
             sys.exit(1)
 
     def takeoff(self):
-        print("Taking off...")
+        logger.info("Taking off...")
         self.client.takeoffAsync().join()
-        print("Drone is airborne.")
+        logger.info("Drone is airborne.")
 
     def hover(self):
-        print("Hovering...")
+        logger.info("Hovering...")
         self.client.hoverAsync().join()
 
     def get_camera_feed(self, camera_name="0", image_type=airsim.ImageType.Scene):
@@ -52,14 +55,14 @@ class VirtualDroneController:
         """
         Moves the drone to local coordinates (North/East/Down) synchronously.
         """
-        print(f"Moving to X:{x}, Y:{y}, Z:{z} at {velocity} m/s")
+        logger.info("Moving to X:%s, Y:%s, Z:%s at %s m/s", x, y, z, velocity)
         self.client.moveToPositionAsync(x, y, z, velocity).join()
 
     def move_to_position_async(self, x, y, z, velocity):
         """
         Moves the drone asynchronously (doesn't block the camera feed).
         """
-        print(f"Patrolling towards X:{x}, Y:{y}, Z:{z} at {velocity} m/s")
+        logger.info("Patrolling towards X:%s, Y:%s, Z:%s at %s m/s", x, y, z, velocity)
         return self.client.moveToPositionAsync(x, y, z, velocity)
 
     def move_by_velocity_body_async(self, vx, vy, vz, duration):
@@ -93,12 +96,17 @@ class VirtualDroneController:
         """
         return self.client.rotateByYawRateAsync(yaw_rate, duration)
 
-    def hover(self):
-        print("Hovering...")
-        self.client.hoverAsync().join()
-        
+    def rotate_to_yaw(self, yaw_degrees):
+        """
+        Rotates the drone to an absolute yaw angle (degrees) synchronously.
+        """
+        logger.info("Rotating to yaw %s degrees", yaw_degrees)
+        import math
+        yaw_rad = math.radians(yaw_degrees)
+        self.client.rotateToYawAsync(yaw_degrees).join()
+
     def land(self):
-        print("Landing...")
+        logger.info("Landing...")
         self.client.landAsync().join()
         self.client.armDisarm(False)
         self.client.enableApiControl(False)
@@ -117,4 +125,4 @@ if __name__ == "__main__":
         time.sleep(1)
         
     drone.land()
-    print("Test complete.")
+    logger.info("Test complete.")

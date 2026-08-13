@@ -1,0 +1,28 @@
+name: Integration Tests (GPU)
+
+on:
+  workflow_dispatch:        # manual trigger
+  push:
+    branches: [main, master]
+    paths: ["MODEL/**", "tests/**"]
+
+jobs:
+  gpu:
+    name: GPU end-to-end
+    runs-on: [self-hosted, gpu]   # requires a self-hosted runner with CUDA
+    timeout-minutes: 30
+    env:
+      KAAL_RUN_GPU_TESTS: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install package
+        run: |
+          pip install -e ".[dev]"
+          pip install opencv-python-headless
+      - name: Smoke-test CUDA
+        run: python -c "import torch; assert torch.cuda.is_available(), 'CUDA required'"
+      - name: Run full test suite incl. GPU tests
+        run: pytest --cov=MODEL --cov-report=term-missing

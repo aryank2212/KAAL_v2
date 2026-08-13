@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import Sidebar from "./components/Sidebar";
 import Navbar from "./components/Navbar";
 import "./App.css";
@@ -8,6 +8,8 @@ import MultiGraph from "./components/MultiGraph";
 import Controls from "./components/Controls";
 import HealthMonitor from "./components/SystemStatus";
 import StatusBar from "./components/StatusBar";
+import SettingsPanel from "./components/SettingsPanel";
+import useDefenseSocket from "./lib/useDefenseSocket";
 
 function App() {
   const [selectedModel, setSelectedModel] = useState("Model 1");
@@ -15,88 +17,108 @@ function App() {
   const [image, setImage] = useState(null);
   const [isRunning, setIsRunning] = useState(true);
   const [systemMetrics, setSystemMetrics] = useState({
-    cpu: 42,
-    memory: 67,
-    gpu: 31,
-    bandwidth: 88,
-    latency: 23,
-    uptime: "47:12:03",
+    cpu: 0,
+    memory: 0,
+    gpu: null,
+    bandwidth: 0,
+    latency: 0,
+    uptime: "00:00:00",
   });
+  const [detections, setDetections] = useState([]);
+  const [attack, setAttack] = useState(false);
+  const [alertActive, setAlertActive] = useState(false);
+  const [settings, setSettings] = useState({ fft_threshold: 0.5, conf: 0.4 });
   const [swarmData, setSwarmData] = useState({
-    status: 'NOMINAL',
+    status: "NOMINAL",
     alive: 0,
     kia: 0,
-    mode: 'NORMAL'
+    mode: "NORMAL",
   });
 
-  // Seed data
+  // Real-time stream (WebSocket with polling fallback).
+  const { snapshot, connected } = useDefenseSocket(isRunning ? 1000 : null);
+
   useEffect(() => {
-    const initial = [];
-    for (let i = 1; i <= 12; i++) {
-      initial.push({
-        time: i,
-        value: 10 + Math.sin(i * 0.5) * 15 + Math.random() * 5,
-        value2: 5 + Math.cos(i * 0.3) * 10 + Math.random() * 5,
-        value3: 20 + Math.sin(i * 0.8) * 8 + Math.random() * 3,
-      });
-    }
-    setData(initial);
     setImage("/api/video_feed");
   }, [selectedModel]);
 
-  // Live data stream
+  // Apply incoming snapshot to dashboard state.
   useEffect(() => {
-    if (!isRunning) return;
+    if (!snapshot) return;
+    setData(snapshot.data || []);
+    setSystemMetrics(snapshot.systemMetrics || systemMetrics);
+    setDetections(snapshot.detections || []);
+    setAttack(Boolean(snapshot.is_attack));
+    setSettings((prev) => ({
+      ...prev,
+      fft_threshold: snapshot.fft_threshold ?? prev.fft_threshold,
+    }));
+    setSwarmData((prev) => ({
+      ...prev,
+      status: snapshot.status || prev.status,
+      noise_score: snapshot.noise_score,
+      alive: snapshot.flagged_count !== undefined ? snapshot.flagged_count : prev.alive,
+      kia: snapshot.flagged_count !== undefined ? snapshot.flagged_count : prev.kia,
+    }));
+  }, [snapshot]);
 
-    const fetchBackendData = async () => {
-      try {
-        const response = await fetch('/api/python-data');
-        if (!response.ok) throw new Error('Failed to fetch data');
-        const result = await response.json();
-        
-        setData(result.data);
-        setSystemMetrics(result.systemMetrics);
-        setSwarmData(prev => ({
-          ...prev,
-          status: result.status,
-          noise_score: result.noise_score,
-          alive: result.alive !== undefined ? result.alive : prev.alive,
-          kia: result.kia !== undefined ? result.kia : prev.kia,
-        }));
-      } catch (err) {
-        console.error("Error fetching python data:", err);
-      }
-    };
+  // Alert system: visual banner + audio beep on attack onset.
+  useEffect(() => {
+    if (!attack) return;
+    setAlertActive(true);
+    playAlertBeep();
+    const t = setTimeout(() => setAlertActive(false), 3000);
+    return () => clearTimeout(t);
+  }, [attack]);
 
-    // Fetch immediately on mount or start
-    fetchBackendData();
+  // Load live defense settings once.
+  useEffect(() => {
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((s) => setSettings((prev) => ({ ...prev, ...s })))
+      .catch(() => {});
+  }, []);
 
-    const interval = setInterval(fetchBackendData, 1500);
-
-    return () => clearInterval(interval);
-  }, [isRunning]);
+  const applySettings = useCallback(async (next) => {
+    try {
+      const res = await fetch("/api/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(next),
+      });
+      if (!res.ok) return false;
+      const s = await res.json();
+      setSettings((prev) => ({ ...prev, ...s }));
+      return true;
+    } catch {
+      return false;
+    }
+  }, []);
 
   return (
     <div className="app flex flex-col h-screen overflow-hidden text-white">
-      {/* Top Navbar */}
       <Navbar systemMetrics={systemMetrics} isRunning={isRunning} />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
         <Sidebar
           selectedModel={selectedModel}
           setSelectedModel={setSelectedModel}
           systemMetrics={systemMetrics}
         />
 
-        {/* Main Content Grid — 8 columns for precise sizing */}
         <div className="flex-1 grid grid-cols-8 grid-rows-[auto_2fr_1fr_auto] gap-3 p-3 overflow-hidden">
-          {/* Status Bar — full width */}
           <div className="col-span-8">
-            <StatusBar systemMetrics={systemMetrics} isRunning={isRunning} swarmData={swarmData} />
+            <StatusBar
+              systemMetrics={systemMetrics}
+              isRunning={isRunning}
+              swarmData={swarmData}
+              connected={connected}
+              attack={attack}
+              fftThreshold={settings.fft_threshold}
+              flaggedCount={swarmData.kia}
+            />
           </div>
 
-          {/* Main Mission Feed — dominant, spans 6 cols + 2 rows */}
           <div className="col-span-6 row-span-2 glass active">
             <MainPanel
               image={image}
@@ -104,29 +126,33 @@ function App() {
               isRunning={isRunning}
               swarmData={swarmData}
               onSwarmData={setSwarmData}
+              detections={detections}
+              attack={attack}
+              alertActive={alertActive}
             />
           </div>
 
-          {/* Analytics Graph — narrow right panel */}
           <div className="col-span-2 glass">
             <GraphPanel data={data} />
           </div>
 
-          {/* Performance Multi-Graph — narrow right panel */}
           <div className="col-span-2 glass">
             <MultiGraph data={data} />
           </div>
 
-          {/* Controls — bottom left */}
-          <div className="col-span-4 glass">
-            <Controls
-              setSelectedModel={setSelectedModel}
-              isRunning={isRunning}
-              setIsRunning={setIsRunning}
-            />
+          <div className="col-span-4 flex flex-col gap-3 overflow-hidden">
+            <div className="flex-1 glass min-h-0">
+              <Controls
+                setSelectedModel={setSelectedModel}
+                isRunning={isRunning}
+                setIsRunning={setIsRunning}
+              />
+            </div>
+            <div className="flex-1 glass min-h-0">
+              <SettingsPanel settings={settings} onApply={applySettings} />
+            </div>
           </div>
 
-          {/* Health Monitoring System — bottom right, compact with stars */}
           <div className="col-span-4">
             <HealthMonitor systemMetrics={systemMetrics} isRunning={isRunning} />
           </div>
@@ -134,6 +160,25 @@ function App() {
       </div>
     </div>
   );
+}
+
+function playAlertBeep() {
+  try {
+    const Ctx = window.AudioContext || window.webkitAudioContext;
+    const ctx = new Ctx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.type = "square";
+    osc.frequency.value = 880;
+    gain.gain.setValueAtTime(0.15, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.start();
+    osc.stop(ctx.currentTime + 0.5);
+  } catch {
+    /* audio unavailable — visual alert still fires */
+  }
 }
 
 export default App;

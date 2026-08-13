@@ -1,6 +1,8 @@
 # KAAL: Autonomous Swarm & Adversarial Defense Framework
 **KAAL is a hierarchical multi-agent framework for sustainable and autonomous drone swarms combining flocking instincts with adversarial threat detection.**
 
+[![CI — lint, typecheck, tests](https://github.com/aryank2212/KAAL/actions/workflows/ci.yml/badge.svg)](https://github.com/aryank2212/KAAL/actions/workflows/ci.yml)
+
 ---
 
 ## 🛑 The Problem
@@ -87,6 +89,25 @@ Because of this, if a jammer disconnects them from the base, the swarm logic tak
 * **Smart Cities & Agriculture**: Remote crop monitoring and urban grid monitoring without relying on massive bandwidth or permanent internet infrastructure.
 ---
 
+## 🧪 Testing & CI
+
+The repo runs three automated checks on every push (GitHub Actions, see `.github/workflows/ci.yml`):
+
+1. **Lint** — `ruff check MODEL tests`
+2. **Type check** — `mypy MODEL tests`
+3. **Unit + integration tests** — `pytest tests/` (74 passed; 1 GPU-marked test auto-skipped without torch)
+
+The integration suite exercises the full defense path: `DualStreamDefense.predict()` on clean vs patched images (asserts detection rate > 80% with a calibration-derived threshold) and the FastAPI server JSON schema.
+
+```bash
+pip install -r requirements.txt ruff mypy pytest
+ruff check MODEL tests
+mypy MODEL tests
+pytest tests/            # skip GPU tests via -m "not gpu"
+```
+
+---
+
 ## 🛠️ Installation & Setup Guide
 
 ### 1. Clone the Repository
@@ -109,13 +130,12 @@ source venv/bin/activate
 
 # Install the required dependencies
 pip install -r MODEL/requirements.txt
-pip install fastapi uvicorn  # Extra requirements for the API server
+pip install -r requirements-server.txt  # FastAPI + uvicorn + psutil + websockets
 
-# Run the backend server
-cd Frontend_Backend/backend
-python server.py
+# Run the backend server (config via KAAL_* env vars; e.g. KAAL_CAMERA_INDEX, KAAL_FFT_THRESHOLD)
+python Frontend_Backend/backend/server.py
 ```
-*The backend server will start running on `http://localhost:3000`.*
+*The backend server will start on `http://localhost:3000` with `/api/health`, `/api/python-data`, `/api/settings`, and a WebSocket stream at `/ws`.*
 
 ### 3. Frontend Setup (React Dashboard)
 The frontend dashboard visualizes the swarm status and adversarial alerts. Open a **new terminal window** and run:

@@ -1,11 +1,7 @@
 import torch
 from ultralytics.models.yolo.detect.train import DetectionTrainer
-import sys
-import os
 
-# Ensure the local modules can be imported
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from attacks.pgd import pgd_attack
+from ..attacks.pgd import pgd_attack
 
 class RobustDetectionTrainer(DetectionTrainer):
     """

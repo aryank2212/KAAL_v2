@@ -1,5 +1,8 @@
 import torch
 import numpy as np
+import logging
+
+logger = logging.getLogger(__name__)
 
 class AnomalyDetector:
     def __init__(self, threshold=None, percentile=95):
@@ -47,7 +50,7 @@ class AnomalyDetector:
         """
         Automatically determine threshold using a clean calibration set.
         """
-        print("Calibrating Anomaly Detector on clean data...")
+        logger.info("Calibrating Anomaly Detector on clean data...")
         model.eval()
         scores = []
         with torch.no_grad():
@@ -62,7 +65,7 @@ class AnomalyDetector:
                 
         self.calibration_scores = scores
         self.threshold = np.percentile(scores, self.percentile)
-        print(f"Calibration complete. Threshold set at {self.percentile}th percentile: {self.threshold:.4f}")
+        logger.info("Calibration complete. Threshold set at %dth percentile: %.4f", self.percentile, self.threshold)
         return self.threshold
 
     def is_anomalous(self, preds):

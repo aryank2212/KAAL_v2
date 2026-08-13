@@ -2,6 +2,7 @@ import os
 import shutil
 import yaml
 import torch
+import logging
 import numpy as np
 from pathlib import Path
 from PIL import Image
@@ -10,12 +11,12 @@ from ultralytics import YOLO
 from ultralytics.data.utils import check_det_dataset
 from ultralytics.utils import DATASETS_DIR
 
-import sys
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
-from attacks.pgd import pgd_attack
-from defenses.preprocess import defense_pipeline
-from detection.anomaly import AnomalyDetector
-from evaluation.metrics import RobustnessMetrics
+from ..attacks.pgd import pgd_attack
+from ..defenses.preprocess import defense_pipeline
+from ..detection.anomaly import AnomalyDetector
+from .metrics import RobustnessMetrics
+
+logger = logging.getLogger(__name__)
 
 def create_modified_dataset(original_yaml_path, output_dir_name, mode="adv", model=None, attack_kwargs=None, defense_kwargs=None, anomaly_detector=None, metrics_tracker=None):
     """
@@ -46,7 +47,7 @@ def create_modified_dataset(original_yaml_path, output_dir_name, mode="adv", mod
     
     # Process each image
     image_files = list(full_val_path.glob("*.*"))
-    print(f"Processing {len(image_files)} images for {mode} dataset...")
+    logger.info("Processing %d images for %s dataset...", len(image_files), mode)
     
     transforms_pt = getattr(model.model, 'pt', True) if model else True
     
@@ -114,13 +115,13 @@ def run_evaluation(model_path, data_yaml, img_size=640):
     metrics = RobustnessMetrics()
     detector = AnomalyDetector(percentile=95)
     
-    print("Evaluating CLEAN baseline...")
+    logger.info("Evaluating CLEAN baseline...")
     clean_val = model.val(data=data_yaml, imgsz=img_size, split='val', plots=False, workers=0)
     metrics.clean_map = clean_val.box.map50
     # Clean stats approximation from val
-    print(f"Clean mAP@0.5: {metrics.clean_map:.4f}")
+    logger.info("Clean mAP@0.5: %.4f", metrics.clean_map)
     
-    print("Generating Adversarial Dataset...")
+    logger.info("Generating Adversarial Dataset...")
     import numpy as np # deferred import
     
     adv_model = YOLO(model_path)
@@ -132,12 +133,12 @@ def run_evaluation(model_path, data_yaml, img_size=640):
         model=adv_model, attack_kwargs={"epsilon": 8/255, "iters": 5},
         anomaly_detector=detector, metrics_tracker=metrics
     )
-    print("Evaluating ADVERSARIAL...")
+    logger.info("Evaluating ADVERSARIAL...")
     adv_val = model.val(data=adv_yaml, imgsz=img_size, split='val', plots=False, workers=0)
     metrics.adv_map = adv_val.box.map50
-    print(f"Adversarial mAP@0.5: {metrics.adv_map:.4f}")
+    logger.info("Adversarial mAP@0.5: %.4f", metrics.adv_map)
     
-    print("Generating Defended Dataset from Adversarial...")
+    logger.info("Generating Defended Dataset from Adversarial...")
     # Actually we should apply defense on the adversarial images directly.
     # To do this right, we can just construct a "defended" sequence.
     defended_yaml = create_modified_dataset(
@@ -145,21 +146,21 @@ def run_evaluation(model_path, data_yaml, img_size=640):
         model=model, defense_kwargs={"use_jpeg": True, "use_bit_depth": True, "use_blur": True},
         anomaly_detector=detector, metrics_tracker=metrics
     )
-    print("Evaluating DEFENDED...")
+    logger.info("Evaluating DEFENDED...")
     def_val = model.val(data=defended_yaml, imgsz=img_size, split='val', plots=False, workers=0)
     metrics.defended_map = def_val.box.map50
-    print(f"Defended mAP@0.5: {metrics.defended_map:.4f}")
+    logger.info("Defended mAP@0.5: %.4f", metrics.defended_map)
     
-    print(metrics.summary())
+    logger.info("%s", metrics.summary())
     # Anomaly metrics
     if len(metrics.anomaly_scores) > 0:
         # We can dynamically set threshold using clean scores if we tracked them, 
         # or just use a fixed 95th percentile of all scores
         thresh = np.percentile(metrics.anomaly_scores[:len(metrics.anomaly_scores)//2], 95)
         anom_res = metrics.compute_anomaly_metrics(thresh)
-        print("Anomaly Detection:")
-        print(f"  Precision: {anom_res['Precision']:.4f}")
-        print(f"  Recall/Detection Rate: {anom_res['Recall']:.4f}")
+        logger.info("Anomaly Detection:")
+        logger.info("  Precision: %.4f", anom_res['Precision'])
+        logger.info("  Recall/Detection Rate: %.4f", anom_res['Recall'])
 
 if __name__ == "__main__":
     import argparse

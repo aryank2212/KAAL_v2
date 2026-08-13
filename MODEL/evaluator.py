@@ -11,16 +11,19 @@ Computes:
 
 import os
 import cv2
+import logging
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Any, Optional, Tuple
+from typing import Dict, List, Any, Tuple
 from collections import defaultdict
 
 from ultralytics import YOLO
 
-from config import Config, DefenseMode
-from adversarial_patch import AdversarialPatchInjector, parse_yolo_labels
-from dual_stream_defense import DualStreamDefense
+from .config import Config
+from .adversarial_patch import AdversarialPatchInjector, parse_yolo_labels
+from .dual_stream_defense import DualStreamDefense
+
+logger = logging.getLogger(__name__)
 
 
 class RobustnessEvaluator:
@@ -37,12 +40,21 @@ class RobustnessEvaluator:
             scale_range=config.patch_scale_range,
             alpha=config.patch_alpha,
             patch_image_path=config.patch_image_path,
+            model=model if config.patch_gradient else None,
+            use_perspective=config.patch_perspective,
+            use_lighting=config.patch_lighting,
+            grad_steps=config.patch_opt_steps,
+            grad_lr=config.patch_opt_lr,
         )
         self.defense = DualStreamDefense(
             model=model,
             fft_threshold=config.fft_threshold,
             high_freq_ratio=config.fft_high_freq_ratio,
             conf_threshold=config.conf_threshold,
+            region_mode=config.fft_region_mode,
+            region_min_size=config.fft_region_min_size,
+            overlap_iou=config.fft_overlap_iou,
+            calibration_profile=config.calibration_profile,
         )
         self.results: Dict[str, Any] = {}
 
@@ -56,51 +68,62 @@ class RobustnessEvaluator:
             val_images_dir: Directory of validation images.
             val_labels_dir: Directory of YOLO-format label files.
         """
-        print(f"\n{'='*60}")
-        print("  Robustness Evaluation")
-        print(f"{'='*60}\n")
+        logger.info("\n%s", "=" * 60)
+        logger.info("  Robustness Evaluation")
+        logger.info("%s\n", "=" * 60)
 
         # Collect image/label pairs
         img_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
-        image_files = sorted([
-            f for f in os.listdir(val_images_dir)
-            if Path(f).suffix.lower() in img_extensions
-        ])
+        image_files = sorted(
+            [f for f in os.listdir(val_images_dir) if Path(f).suffix.lower() in img_extensions]
+        )
 
         if not image_files:
-            print("[Evaluator] No validation images found!")
+            logger.warning("No validation images found!")
             return
 
-        print(f"[Evaluator] Found {len(image_files)} validation images\n")
+        logger.info(f"Found {len(image_files)} validation images")
 
         # ── Pass 1: Clean mAP ────────────────────────────────────────────
-        print("── Pass 1: Clean Dataset (no attack) ──")
+        logger.info("── Pass 1: Clean Dataset (no attack) ──")
         clean_metrics = self._evaluate_pass(
-            image_files, val_images_dir, val_labels_dir,
-            apply_attack=False, use_defense=False,
+            image_files,
+            val_images_dir,
+            val_labels_dir,
+            apply_attack=False,
+            use_defense=False,
         )
         self.results["clean"] = clean_metrics
-        print(f"   mAP@0.5: {clean_metrics['mAP50']:.4f}\n")
+        logger.info("   mAP@0.5: %.4f\n", clean_metrics["mAP50"])
 
         # ── Pass 2: Adversarial mAP (no defense) ─────────────────────────
-        print("── Pass 2: Adversarial Attack (no defense) ──")
+        logger.info("── Pass 2: Adversarial Attack (no defense) ──")
         adv_metrics = self._evaluate_pass(
-            image_files, val_images_dir, val_labels_dir,
-            apply_attack=True, use_defense=False,
+            image_files,
+            val_images_dir,
+            val_labels_dir,
+            apply_attack=True,
+            use_defense=False,
         )
         self.results["adversarial"] = adv_metrics
-        print(f"   mAP@0.5: {adv_metrics['mAP50']:.4f}\n")
+        logger.info("   mAP@0.5: %.4f\n", adv_metrics["mAP50"])
 
         # ── Pass 3: Adversarial + Dual-Stream Defense ─────────────────────
-        print("── Pass 3: Adversarial Attack + Dual-Stream Defense ──")
+        logger.info("── Pass 3: Adversarial Attack + Dual-Stream Defense ──")
         defended_metrics = self._evaluate_pass(
-            image_files, val_images_dir, val_labels_dir,
-            apply_attack=True, use_defense=True,
+            image_files,
+            val_images_dir,
+            val_labels_dir,
+            apply_attack=True,
+            use_defense=True,
         )
         self.results["defended"] = defended_metrics
-        print(f"   mAP@0.5: {defended_metrics['mAP50']:.4f}")
-        print(f"   Adversarial images detected: "
-              f"{defended_metrics['adversarial_detected']}/{len(image_files)}\n")
+        logger.info("   mAP@0.5: %.4f", defended_metrics["mAP50"])
+        logger.info(
+            "   Adversarial images detected: %d/%d\n",
+            defended_metrics["adversarial_detected"],
+            len(image_files),
+        )
 
         # ── Print Summary ─────────────────────────────────────────────────
         self.print_report()
@@ -128,10 +151,11 @@ class RobustnessEvaluator:
         Returns:
             Dict with mAP50, per-class metrics, confusion counts, etc.
         """
-        all_gt_boxes = []     # Ground truth: list of (class_id, bbox) per image
-        all_pred_boxes = []   # Predictions: list of (class_id, confidence, bbox) per image
+        all_gt_boxes = []  # Ground truth: list of (class_id, bbox) per image
+        all_pred_boxes = []  # Predictions: list of (class_id, confidence, bbox) per image
         adversarial_detected = 0
         total_anomaly_scores = []
+        total_objects_flagged = 0
 
         for img_name in image_files:
             img_path = os.path.join(images_dir, img_name)
@@ -164,6 +188,7 @@ class RobustnessEvaluator:
                 result = self.defense.predict(image)
                 detections = result["detections"]
                 total_anomaly_scores.append(result["anomaly_score"])
+                total_objects_flagged += result.get("objects_flagged", 0)
                 if result["is_adversarial"]:
                     adversarial_detected += 1
             else:
@@ -172,11 +197,13 @@ class RobustnessEvaluator:
             # Collect predictions
             pred_boxes = []
             for det in detections:
-                pred_boxes.append((
-                    det["class_id"],
-                    det["confidence"],
-                    det["bbox"],
-                ))
+                pred_boxes.append(
+                    (
+                        det["class_id"],
+                        det["confidence"],
+                        det["bbox"],
+                    )
+                )
             all_pred_boxes.append(pred_boxes)
 
         # Compute mAP
@@ -190,6 +217,7 @@ class RobustnessEvaluator:
             "confusion": confusion,
             "adversarial_detected": adversarial_detected,
             "anomaly_scores": total_anomaly_scores,
+            "objects_flagged": total_objects_flagged,
             "num_images": len(image_files),
         }
 
@@ -207,9 +235,9 @@ class RobustnessEvaluator:
         Uses the standard VOC-style per-class AP computation.
         """
         # Collect all predictions and ground truths by class
-        class_preds = defaultdict(list)   # class_id → [(confidence, img_idx, bbox)]
-        class_gt = defaultdict(list)      # class_id → [(img_idx, bbox, matched)]
-        gt_count = defaultdict(int)       # class_id → total ground truth count
+        class_preds = defaultdict(list)  # class_id → [(confidence, img_idx, bbox)]
+        class_gt = defaultdict(list)  # class_id → [(img_idx, bbox, matched)]
+        gt_count: Dict[int, int] = defaultdict(int)  # class_id → total ground truth count
 
         for img_idx, gt_boxes in enumerate(all_gt):
             for cls_id, bbox in gt_boxes:
@@ -255,7 +283,11 @@ class RobustnessEvaluator:
                         best_iou = iou
                         best_gt_idx = j
 
-                if best_iou >= iou_threshold and best_gt_idx >= 0 and not gts[best_gt_idx]["matched"]:
+                if (
+                    best_iou >= iou_threshold
+                    and best_gt_idx >= 0
+                    and not gts[best_gt_idx]["matched"]
+                ):
                     tp[i] = 1
                     gts[best_gt_idx]["matched"] = True
                 else:
@@ -310,11 +342,12 @@ class RobustnessEvaluator:
 
     # ── Report ────────────────────────────────────────────────────────────
 
-    def print_report(self):
-        """Print a formatted evaluation report."""
-        print(f"\n{'='*60}")
-        print("  ROBUSTNESS EVALUATION REPORT")
-        print(f"{'='*60}\n")
+    def print_report(self) -> str:
+        """Build and log a formatted evaluation report; returns the report text."""
+        report = []
+        report.append(f"\n{'=' * 60}")
+        report.append("  ROBUSTNESS EVALUATION REPORT")
+        report.append(f"{'=' * 60}\n")
 
         headers = ["Scenario", "mAP@0.5", "TP", "FP", "FN"]
         rows = []
@@ -327,60 +360,57 @@ class RobustnessEvaluator:
             if scenario in self.results:
                 m = self.results[scenario]
                 c = m["confusion"]
-                rows.append([
-                    label,
-                    f"{m['mAP50']:.4f}",
-                    str(c["TP"]),
-                    str(c["FP"]),
-                    str(c["FN"]),
-                ])
+                rows.append(
+                    [
+                        label,
+                        f"{m['mAP50']:.4f}",
+                        str(c["TP"]),
+                        str(c["FP"]),
+                        str(c["FN"]),
+                    ]
+                )
 
-        # Print table
-        col_widths = [max(len(h), max(len(r[i]) for r in rows))
-                      for i, h in enumerate(headers)]
-        header_line = " | ".join(h.ljust(w) for h, w in zip(headers, col_widths))
-        separator = "-+-".join("-" * w for w in col_widths)
+        if rows:
+            col_widths = [max(len(h), max(len(r[i]) for r in rows)) for i, h in enumerate(headers)]
+            header_line = " | ".join(h.ljust(w) for h, w in zip(headers, col_widths))
+            separator = "-+-".join("-" * w for w in col_widths)
 
-        print(f"  {header_line}")
-        print(f"  {separator}")
-        for row in rows:
-            print(f"  {' | '.join(v.ljust(w) for v, w in zip(row, col_widths))}")
+            report.append(f"  {header_line}")
+            report.append(f"  {separator}")
+            for row in rows:
+                report.append(f"  {' | '.join(v.ljust(w) for v, w in zip(row, col_widths))}")
 
         # Defense-specific stats
         if "defended" in self.results:
             d = self.results["defended"]
-            print(f"\n  Adversarial images flagged: "
-                  f"{d['adversarial_detected']}/{d['num_images']}")
+            report.append(
+                f"\n  Adversarial images flagged: {d['adversarial_detected']}/{d['num_images']}"
+            )
             if d["anomaly_scores"]:
-                print(f"  Mean anomaly score: {np.mean(d['anomaly_scores']):.4f}")
-                print(f"  Max anomaly score:  {np.max(d['anomaly_scores']):.4f}")
+                report.append(f"  Mean anomaly score: {np.mean(d['anomaly_scores']):.4f}")
+                report.append(f"  Max anomaly score:  {np.max(d['anomaly_scores']):.4f}")
 
         # mAP drop analysis
         if "clean" in self.results and "adversarial" in self.results:
             drop = self.results["clean"]["mAP50"] - self.results["adversarial"]["mAP50"]
-            print(f"\n  mAP drop from attack: {drop:+.4f}")
+            report.append(f"\n  mAP drop from attack: {drop:+.4f}")
 
         if "adversarial" in self.results and "defended" in self.results:
             recovery = self.results["defended"]["mAP50"] - self.results["adversarial"]["mAP50"]
-            print(f"  mAP recovery with defense: {recovery:+.4f}")
+            report.append(f"  mAP recovery with defense: {recovery:+.4f}")
 
-        print(f"\n{'='*60}\n")
+        report.append(f"\n{'=' * 60}\n")
+
+        text = "\n".join(report)
+        logger.info("%s", text)
+        return text
 
     def save_report(self, path: str):
         """Save evaluation results to a text file."""
-        import io
-        import sys
-
-        # Capture print_report output
-        old_stdout = sys.stdout
-        sys.stdout = buffer = io.StringIO()
-        self.print_report()
-        sys.stdout = old_stdout
-
         os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
         with open(path, "w") as f:
-            f.write(buffer.getvalue())
-        print(f"[Evaluator] Report saved to: {path}")
+            f.write(self.print_report())
+        logger.info("Report saved to: %s", path)
 
 
 def _compute_iou(box1: List[float], box2: List[float]) -> float:

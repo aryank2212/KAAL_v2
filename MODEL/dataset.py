@@ -11,13 +11,16 @@ import os
 import cv2
 import yaml
 import shutil
+import logging
 import numpy as np
 from pathlib import Path
 from typing import Dict, Optional
 
-from config import Config
-from adversarial_patch import AdversarialPatchInjector, parse_yolo_labels
-from augmentations import add_patch, add_noise, blur, occlude, apply_random_attack
+from .config import Config
+from .adversarial_patch import AdversarialPatchInjector, parse_yolo_labels
+from .augmentations import add_patch, add_noise, blur, occlude
+
+logger = logging.getLogger(__name__)
 
 
 class DatasetPreparer:
@@ -38,6 +41,10 @@ class DatasetPreparer:
             scale_range=config.patch_scale_range,
             alpha=config.patch_alpha,
             patch_image_path=config.patch_image_path,
+            use_perspective=config.patch_perspective,
+            use_lighting=config.patch_lighting,
+            grad_steps=config.patch_opt_steps,
+            grad_lr=config.patch_opt_lr,
         )
         self.data_config: Dict = {}
         self.augmented_data_yaml: Optional[str] = None
@@ -111,18 +118,15 @@ class DatasetPreparer:
 
         # Collect all image files
         img_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
-        image_files = [
-            f for f in os.listdir(train_src)
-            if Path(f).suffix.lower() in img_extensions
-        ]
+        image_files = [f for f in os.listdir(train_src) if Path(f).suffix.lower() in img_extensions]
 
-        print(f"[Dataset] Processing {len(image_files)} training images...")
+        logger.info(f"Processing {len(image_files)} training images...")
         patched_count = 0
 
         for idx, img_name in enumerate(image_files):
             if idx % 100 == 0:
-                print(f"[Dataset] Progress: {idx}/{len(image_files)} images processed...")
-            
+                logger.info(f"Progress: {idx}/{len(image_files)} images processed...")
+
             img_path = os.path.join(train_src, img_name)
             stem = Path(img_name).stem
             ext = Path(img_name).suffix
@@ -173,8 +177,10 @@ class DatasetPreparer:
                     shutil.copy2(label_path, os.path.join(labels_dst, f"{stem}_occlude.txt"))
                 patched_count += 1
 
-        print(f"[Dataset] Created {patched_count} adversarial copies "
-              f"(total training images: {len(image_files) + patched_count})")
+        logger.info(
+            f"Created {patched_count} adversarial copies "
+            f"(total training images: {len(image_files) + patched_count})"
+        )
 
         # ── Write updated data.yaml ───────────────────────────────────────
         new_config = self.data_config.copy()
@@ -191,13 +197,13 @@ class DatasetPreparer:
         # Ensure val has proper label pairing for YOLO validator
         val_labels = os.path.join(os.path.abspath(aug_dir), "val", "labels")
         if os.path.isdir(val_labels):
-            print(f"[Dataset] Validation labels: {val_labels} ({len(os.listdir(val_labels))} files)")
+            logger.info(f"Validation labels: {val_labels} ({len(os.listdir(val_labels))} files)")
 
         self.augmented_data_yaml = os.path.join(aug_dir, "data.yaml")
         with open(self.augmented_data_yaml, "w") as f:
             yaml.dump(new_config, f, default_flow_style=False)
 
-        print(f"[Dataset] Augmented data.yaml written to: {self.augmented_data_yaml}")
+        logger.info(f"Augmented data.yaml written to: {self.augmented_data_yaml}")
         return self.augmented_data_yaml
 
     # ── Standard Augmentations ────────────────────────────────────────────
@@ -226,7 +232,7 @@ class DatasetPreparer:
 
         # Random brightness and contrast
         alpha = np.random.uniform(0.8, 1.2)  # contrast
-        beta = np.random.randint(-20, 21)      # brightness
+        beta = np.random.randint(-20, 21)  # brightness
         result = cv2.convertScaleAbs(result, alpha=alpha, beta=beta)
 
         return result
@@ -266,7 +272,8 @@ def _resize_pad(image: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
     copy_h = min(h, target_h)
     copy_w = min(w, target_w)
 
-    result[dst_y:dst_y + copy_h, dst_x:dst_x + copy_w] = \
-        image[src_y:src_y + copy_h, src_x:src_x + copy_w]
+    result[dst_y : dst_y + copy_h, dst_x : dst_x + copy_w] = image[
+        src_y : src_y + copy_h, src_x : src_x + copy_w
+    ]
 
     return result
