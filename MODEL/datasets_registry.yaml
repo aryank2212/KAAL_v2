@@ -258,6 +258,8 @@ built:
     notes: >-
       cross-source near-duplicate grouping before splitting (21,766 name groups -> 19,672 content
       groups; 627 cross-split duplicates removed); 332 unlabeled legacy images dropped
+    known_issues:
+      - 14 test / 16 val images near-duplicate another image of the same split (weigh twice; fair across models)
 
 models:
   - id: rfdetr-small-v3

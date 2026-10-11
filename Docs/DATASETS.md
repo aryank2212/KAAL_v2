@@ -158,6 +158,15 @@ excluded (`--train-ref`; rebuild against every new training set).
 | `kaal_v4` | `python -m MODEL.build_dataset` | see `MODEL/Datasets/kaal_v4/manifest.json` and `MODEL/RESULTS.md` §7 | adds DVIDS, Open Images tanks, all VisDrone; cross-source de-duplication; unlabeled legacy frames dropped |
 | `kaal_ground_test` | `python -m MODEL.build_ground_test` | test only, 798 | never trained on |
 
+**Known issue (kaal_v4):** the builder guarantees no photo spans two splits,
+but a photo can appear twice *within* one split via two sources or two
+legacy frames: 14 of 1,428 test images (1.0%) and 16 of 1,331 val images
+(1.2%) are near-duplicates of another image in the same split (dHash ≤ 20).
+All models are scored on the same images, so comparisons stay fair; those
+photos simply weigh twice. The next dataset version should keep one image
+per near-duplicate group in val/test across sources (as `legacy_samples`
+already does within the legacy source).
+
 Every built dataset writes `manifest.json` (arguments, per-split image and
 instance counts, licences, duplicates removed) and a `data.yaml` usable by
 both RF-DETR (`dataset_file="yolo"`) and Ultralytics.
