@@ -199,10 +199,14 @@ target with `compare_detectors` (latency column) before committing.
 grad-accum 4, ~10 img/s); a 24 GB card trains Medium at batch 8; Large and
 synthetic pre-training need T4/T5.
 
-**Export path (planned `MODEL/export_model.py`):** checkpoint →
-`model.export()` ONNX (opset ≥ 17) → `trtexec --fp16` engine (T2–T4) /
-OpenVINO IR (T0) / vendor compiler (T1) → parity test (≤ 1 mAP drop vs
-PyTorch on kaal_v4 val) → signed artefact.
+**Export path (`python -m MODEL.export_model`, implemented):** checkpoint →
+`RFDETR.export(format=...)` — `onnx` (opset 17) is parity-tested here and
+served by the `onnx` backend (ONNX Runtime, no torch); the same exporter
+emits `tensorrt` (T2–T4), `openvino` (T0), `coreml`, `tflite` / `litert`
+and `executorch` (T1) → parity test (`--parity N`, fails if mAP50:95 moves
+by > 0.01 vs PyTorch) → SHA-256 recorded in the `.onnx.json` sidecar →
+signing (`cosign`) is the remaining step. Measured on the RTX 4060 laptop's
+CPU: ONNX Runtime 267 ms vs PyTorch 963 ms per image at identical mAP.
 
 ---
 
@@ -237,7 +241,7 @@ PyTorch on kaal_v4 val) → signed artefact.
 
 | Phase | Scope | Exit criterion |
 |---|---|---|
-| 5a | ONNX/TensorRT export + parity test; backend loads the exported engine | ≤ 1 mAP50:95 drop; ≥ 2× speed-up on the RTX 4060 |
+| 5a | ✅ ONNX export + parity test + ONNX Runtime backend (done); TensorRT engine next | ONNX: ΔmAP50:95 ≤ 0.01 (measured +0.0004); TensorRT: ≥ 2× speed-up on the RTX 4060 |
 | 5b | Jetson Orin deployment (DeepStream or TensorRT Python) | ≥ 15 FPS at 512 px, FFT + temporal included |
 | 5c | Ego-motion-compensated temporal cue | clean false-flag rate ≤ 1% on moving-camera clips, attack detection ≥ 90% |
 | 5d | RF-DETR-Medium at 640 px on kaal_v4 (+ tiled inference) | VisDrone mAP50:95 ≥ 0.30; ground any-class mAP50 ≥ 0.80 |

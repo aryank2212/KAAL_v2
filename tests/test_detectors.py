@@ -6,11 +6,12 @@ import numpy as np
 import pytest
 
 from MODEL.detectors import (
-    production_weights,
+    ONNXDetector,
     RFDETRDetector,
     UltralyticsDetector,
     as_detector,
     infer_backend,
+    production_weights,
 )
 
 
@@ -110,3 +111,49 @@ class TestProductionWeights:
         reg.write_text("models:\n  - {id: new, status: production, weights: nope.pth}\n")
         assert production_weights(reg) is None
         assert production_weights(tmp_path / "absent.yaml") is None
+
+
+class _FakeIO:
+    def __init__(self, name, shape=None):
+        self.name, self.shape = name, shape
+
+
+class _FakeSession:
+    """Mimics an onnxruntime session for an RF-DETR graph with 3 queries, 2 classes (+1 slot)."""
+
+    def __init__(self, boxes, logits):
+        self._outputs = [boxes, logits]
+
+    def get_inputs(self):
+        return [_FakeIO("input", [1, 3, 64, 64])]
+
+    def get_outputs(self):
+        return [_FakeIO("dets"), _FakeIO("labels")]
+
+    def run(self, _names, feed):
+        assert feed["input"].shape == (1, 3, 64, 64) and feed["input"].dtype == np.float32
+        return self._outputs
+
+
+class TestONNXDetector:
+    def test_postprocess_matches_rfdetr_semantics(self):
+        boxes = np.array(
+            [[[0.5, 0.5, 0.2, 0.4], [0.25, 0.25, 0.1, 0.1], [0.9, 0.9, 0.1, 0.1]]], np.float32
+        )
+        logits = np.full((1, 3, 3), -10.0, np.float32)
+        logits[0, 0, 1] = 3.0  # query 0 -> class 1, p ~ 0.95
+        logits[0, 1, 0] = 0.0  # query 1 -> class 0, p = 0.5
+        logits[0, 2, 2] = 5.0  # query 2 -> slot 2 (not a named class) -> dropped
+        det = ONNXDetector(_FakeSession(boxes, logits), {0: "aircraft", 1: "tank"})
+        out = det.predict(np.zeros((100, 200, 3), np.uint8), conf=0.4)
+
+        assert [d["class_name"] for d in out] == ["tank", "aircraft"]  # sorted by score
+        assert out[0]["bbox"] == pytest.approx(
+            [80.0, 30.0, 120.0, 70.0]
+        )  # cx,cy,w,h * (w=200, h=100)
+        assert out[0]["confidence"] == pytest.approx(1 / (1 + np.exp(-3.0)))
+        assert det.predict(np.zeros((100, 200, 3), np.uint8), conf=0.6)[0]["class_name"] == "tank"
+        assert len(det.predict(np.zeros((100, 200, 3), np.uint8), conf=0.6)) == 1
+
+    def test_onnx_suffix_selects_onnx_backend(self):
+        assert infer_backend("model.onnx") == "onnx"

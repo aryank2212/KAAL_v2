@@ -252,9 +252,12 @@ built:
   - id: kaal_v4
     local_path: MODEL/Datasets/kaal_v4
     builder: python -m MODEL.build_dataset
-    status: pending
+    status: on_disk
     sources: [legacy, visdrone, military_aircraft, uav_tank, dvids, openimages_tank]
-    notes: cross-source near-duplicate grouping before splitting; unlabeled legacy frames dropped
+    size: 16,683 train / 1,331 val / 1,428 test images, 9 classes
+    notes: >-
+      cross-source near-duplicate grouping before splitting (21,766 name groups -> 19,672 content
+      groups; 627 cross-split duplicates removed); 332 unlabeled legacy images dropped
 
 models:
   - id: rfdetr-small-v3

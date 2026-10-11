@@ -32,6 +32,10 @@ ml = [
     "supervision>=0.25",
     "huggingface_hub>=0.30",
 ]
+# Run an exported RF-DETR (python -m MODEL.export_model) without torch.
+onnx = ["onnxruntime>=1.17"]
+# Export the production RF-DETR to ONNX / TensorRT / OpenVINO / CoreML ...
+export = ["rfdetr[onnx]>=1.11", "onnxruntime>=1.17"]
 sim = ["airsim>=1.8.1", "pynput>=1.7.6"]
 server = ["fastapi>=0.104.0", "uvicorn>=0.24.0", "psutil>=5.9.0", "websockets>=12.0"]
 dev = [
@@ -48,6 +52,9 @@ kaal-pipeline = "MODEL.pipeline:main"
 kaal-build-dataset = "MODEL.build_dataset:main"
 kaal-train = "MODEL.train_detector:main"
 kaal-compare = "MODEL.compare_detectors:main"
+kaal-fetch = "MODEL.fetch_datasets:main"
+kaal-build-ground-test = "MODEL.build_ground_test:main"
+kaal-export = "MODEL.export_model:main"
 
 [tool.setuptools]
 packages = [
@@ -59,6 +66,10 @@ packages = [
     "MODEL.training",
     "MODEL.visualization",
 ]
+
+[tool.setuptools.package-data]
+# production_weights() reads the registry at runtime
+MODEL = ["datasets_registry.yaml"]
 
 [tool.ruff]
 line-length = 100

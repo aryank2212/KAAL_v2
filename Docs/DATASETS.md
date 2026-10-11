@@ -106,6 +106,18 @@ photos (public domain); labels CC0, VLM-assisted with human correction.
 Single `train` folder upstream → split 80/10/10 by blocks of 20 DVIDS ids
 (one upload ≈ one event), so an event does not straddle splits.
 
+Usable after mapping: 1,035+ labelled photos (847 / 84 / 104 at the first
+count) — soldier 2,734, vehicle 476, armored_vehicle 418, tank 337,
+artillery 298, helicopter 42, aircraft 30 boxes. It is the only clean-licence
+source of real soldier and artillery photos in the set.
+
+Known label noise (spot-check of 16 photos): camouflage netting boxed as
+`tank`; the same M109 self-propelled howitzer labelled `artillery` in one
+photo and `apc` in another; a gun-barrel close-up labelled `apc`; close-up
+portraits of service members (incl. a diver) labelled `soldier`. Roughly one
+questionable box in 10–20 — acceptable for training, worth relabelling
+(FUTURE_SCALING §4).
+
 ### 3.6 Open Images tanks — `MODEL/Datasets/openimages_tank`
 
 `python -m MODEL.fetch_datasets openimages_tank` — every Open Images V7

@@ -102,9 +102,14 @@ the end-to-end demo.
   detections), maps class ids to the names stored in the checkpoint.
   `from_weights()` uses `rfdetr.RFDETR.from_checkpoint`, or a size class for
   COCO weights. Optional `optimize_for_inference`.
+* **`ONNXDetector`** — the RF-DETR exported by `python -m MODEL.export_model`,
+  run with ONNX Runtime (no torch): bilinear resize to the graph input,
+  ImageNet normalisation, sigmoid over the class logits, top-300 over
+  (query, class), boxes scaled to the frame — RF-DETR's own post-processing,
+  parity-tested (ΔmAP50:95 +0.0004; 3.6× faster than PyTorch on CPU).
 * **`UltralyticsDetector`** — YOLO with class-agnostic NMS at IoU 0.45.
 * **Selection.** `infer_backend()` maps `.pth`/`.ckpt` → RF-DETR, anything
-  else → YOLO; `KAAL_DETECTOR` overrides. `production_weights()` returns the
+  `.onnx` → ONNX Runtime, anything else → YOLO; `KAAL_DETECTOR` overrides. `production_weights()` returns the
   weights of the registry model marked `status: production`; the backend
   uses it when `KAAL_MODEL_PATH` is unset, then falls back to the stock
   `MODEL/yolov8m.pt`, then to demo mode (no detector; FFT, temporal, metrics
@@ -351,6 +356,10 @@ python -m MODEL.compare_detectors --data MODEL/Datasets/kaal_v4 \
 python -m MODEL.compare_detectors --data MODEL/Datasets/kaal_ground_test \
     --eval-classes tank,armored_vehicle,artillery,engineering_vehicle --agnostic \
     --detector v4=MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth
+
+# export for deployment (ONNX + parity check; also --format tensorrt/openvino/...)
+python -m MODEL.export_model --parity 200
+KAAL_MODEL_PATH=MODEL/runs/export/rfdetr-small-v4/rfdetr-small-v4.onnx python Frontend_Backend/backend/server.py
 
 # run (uses the production weights from the registry)
 python Frontend_Backend/backend/server.py

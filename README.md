@@ -142,6 +142,16 @@ pip install -e ".[ml,server]"     # detectors + training + backend
 # pip install -e ".[server]"      # model-free defense + backend only (demo mode, no detector)
 ```
 
+### Export for deployment
+
+```bash
+pip install -e ".[export]"
+python -m MODEL.export_model --parity 200        # production RF-DETR -> ONNX, fails if mAP moves > 0.01
+python -m MODEL.export_model --format tensorrt   # also openvino, coreml, tflite, ... (RF-DETR exporter)
+pip install -e ".[onnx,server]"                  # edge box: ONNX Runtime, no torch
+KAAL_MODEL_PATH=MODEL/runs/export/<run>/<run>.onnx python Frontend_Backend/backend/server.py
+```
+
 ### Backend
 
 ```bash
@@ -152,8 +162,8 @@ Serves `http://127.0.0.1:3000`: `/api/health`, `/api/python-data`, `/api/setting
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `KAAL_MODEL_PATH` | production RF-DETR from `MODEL/datasets_registry.yaml` if on disk, else `MODEL/yolov8m.pt` | `.pt` → YOLO, `.pth`/`.ckpt` → RF-DETR |
-| `KAAL_DETECTOR` | `auto` | force `yolo` or `rfdetr` |
+| `KAAL_MODEL_PATH` | production RF-DETR from `MODEL/datasets_registry.yaml` if on disk, else `MODEL/yolov8m.pt` | `.pth`/`.ckpt` → RF-DETR, `.onnx` → ONNX Runtime (no torch), `.pt` → YOLO |
+| `KAAL_DETECTOR` | `auto` | force `rfdetr`, `onnx` or `yolo` (auto = from the weights suffix) |
 | `KAAL_HOST` | `127.0.0.1` | bind address (local only by default) |
 | `KAAL_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | allowed dashboard origins (HTTP + WebSocket) |
 | `KAAL_API_TOKEN` | — | require `X-KAAL-Token` on `PUT /api/settings` (set `VITE_KAAL_API_TOKEN` for the dashboard) |

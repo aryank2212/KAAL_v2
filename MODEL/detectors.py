@@ -9,6 +9,9 @@ result objects:
      "class_id": int, "class_name": str}
 
 Backends
+  onnx    RF-DETR exported with ``python -m MODEL.export_model`` (.onnx +
+          .onnx.json class names), run by ONNX Runtime — no torch needed;
+          mirrors RF-DETR's own pre/post-processing (parity-tested).
   yolo    Ultralytics YOLO (.pt weights) — YOLOv8 / YOLO11 / YOLO26.
   rfdetr  Roboflow RF-DETR (ICLR 2026, Apache-2.0) — a real-time DETR with a
           DINOv2 backbone. NMS-free, and on COCO / RF100-VL more accurate than
@@ -130,6 +133,86 @@ class RFDETRDetector:
         return out
 
 
+class ONNXDetector:
+    """RF-DETR exported to ONNX, run with ONNX Runtime.
+
+    Reproduces ``RFDETR.predict``: bilinear resize to the graph's input size,
+    ImageNet normalisation, sigmoid over the class logits, top-``num_select``
+    over (query, class) pairs, centre-size boxes scaled to the frame.
+    """
+
+    MEANS = np.array([0.485, 0.456, 0.406], dtype=np.float32)
+    STDS = np.array([0.229, 0.224, 0.225], dtype=np.float32)
+
+    def __init__(self, session: Any, names: Dict[int, str], num_select: int = 300) -> None:
+        self.session = session
+        inp = session.get_inputs()[0]
+        self.input_name = inp.name
+        self.input_hw = (int(inp.shape[2]), int(inp.shape[3]))
+        self.output_names = [o.name for o in session.get_outputs()]
+        self.names = names
+        self.num_select = num_select
+
+    @classmethod
+    def from_weights(cls, weights: str, providers: Optional[List[str]] = None) -> "ONNXDetector":
+        import json
+
+        import onnxruntime as ort
+
+        meta_path = Path(f"{weights}.json")
+        names: Dict[int, str] = {}
+        if meta_path.exists():
+            names = dict(enumerate(json.loads(meta_path.read_text())["class_names"]))
+        session = ort.InferenceSession(
+            weights, providers=providers or ort.get_available_providers()
+        )
+        return cls(session, names)
+
+    def preprocess(self, image: np.ndarray) -> np.ndarray:
+        h, w = self.input_hw
+        rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+        x = cv2.resize(rgb, (w, h), interpolation=cv2.INTER_LINEAR).astype(np.float32) / 255.0
+        return ((x - self.MEANS) / self.STDS).transpose(2, 0, 1)[None].astype(np.float32)
+
+    def postprocess(
+        self, boxes: np.ndarray, logits: np.ndarray, image_hw: tuple, conf: float
+    ) -> List[Dict[str, Any]]:
+        """``boxes`` (Q, 4) normalised cx, cy, w, h; ``logits`` (Q, C)."""
+        h0, w0 = image_hw
+        prob = 1.0 / (1.0 + np.exp(-logits.astype(np.float32)))
+        flat = prob.ravel()
+        k = min(self.num_select, flat.size)
+        top = np.argpartition(-flat, k - 1)[:k]
+        top = top[np.argsort(-flat[top], kind="stable")]
+        queries, labels, scores = top // prob.shape[1], top % prob.shape[1], flat[top]
+        cx, cy, bw, bh = boxes[queries].T
+        xyxy = np.stack([cx - bw / 2, cy - bh / 2, cx + bw / 2, cy + bh / 2], axis=1)
+        xyxy = np.clip(xyxy * np.array([w0, h0, w0, h0], dtype=np.float32), 0, [w0, h0, w0, h0])
+        out = []
+        for box, score, label in zip(xyxy, scores, labels):
+            if score <= conf or (self.names and int(label) not in self.names):
+                continue
+            out.append(
+                {
+                    "bbox": [float(v) for v in box],
+                    "confidence": float(score),
+                    "class_id": int(label),
+                    "class_name": self.names.get(int(label), str(int(label))),
+                }
+            )
+        return out
+
+    def predict(self, image: np.ndarray, conf: float = 0.25) -> List[Dict[str, Any]]:
+        outputs = dict(
+            zip(
+                self.output_names, self.session.run(None, {self.input_name: self.preprocess(image)})
+            )
+        )
+        boxes = outputs.get("dets", next(iter(outputs.values())))
+        logits = outputs.get("labels", list(outputs.values())[-1])
+        return self.postprocess(boxes[0], logits[0], image.shape[:2], conf)
+
+
 def production_weights(registry: Path = REGISTRY) -> Optional[Path]:
     """Weights of the registry model with ``status: production``, if they exist on disk."""
     try:
@@ -144,8 +227,10 @@ def production_weights(registry: Path = REGISTRY) -> Optional[Path]:
 
 
 def infer_backend(weights: Optional[str]) -> str:
-    """Guess the backend from a weights path (``.pt`` -> yolo, ``.pth/.ckpt`` -> rfdetr)."""
+    """Guess the backend from a weights path (.pth/.ckpt -> rfdetr, .onnx -> onnx, else yolo)."""
     suffix = Path(weights).suffix.lower() if weights else ""
+    if suffix == ".onnx":
+        return "onnx"
     return "rfdetr" if suffix in (".pth", ".ckpt") else "yolo"
 
 
@@ -155,7 +240,7 @@ def load_detector(
     rfdetr_size: str = "small",
     optimize: bool = False,
 ) -> Detector:
-    """Build a detector. ``backend`` is "yolo", "rfdetr" or None (inferred from weights)."""
+    """Build a detector. ``backend`` is "rfdetr", "onnx", "yolo" or None (inferred from weights)."""
     backend = (backend or infer_backend(weights)).lower()
     if backend == "yolo":
         if not weights:
@@ -163,12 +248,18 @@ def load_detector(
         return UltralyticsDetector.from_weights(weights)
     if backend == "rfdetr":
         return RFDETRDetector.from_weights(weights, size=rfdetr_size, optimize=optimize)
-    raise ValueError(f"Unknown detector backend: {backend!r} (expected 'yolo' or 'rfdetr')")
+    if backend == "onnx":
+        if not weights:
+            raise ValueError(
+                "ONNX backend needs an exported .onnx file (python -m MODEL.export_model)"
+            )
+        return ONNXDetector.from_weights(weights)
+    raise ValueError(f"Unknown detector backend: {backend!r} (expected 'rfdetr', 'onnx' or 'yolo')")
 
 
 def as_detector(model: Any) -> Detector:
     """Accept either a ``Detector`` or a raw Ultralytics-style model object."""
-    if isinstance(model, (UltralyticsDetector, RFDETRDetector)):
+    if isinstance(model, (UltralyticsDetector, RFDETRDetector, ONNXDetector)):
         return model
     if hasattr(model, "predict") and not hasattr(model, "class_names"):
         return UltralyticsDetector(model)

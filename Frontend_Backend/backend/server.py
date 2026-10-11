@@ -23,8 +23,9 @@ Configuration (environment variables)
     KAAL_CORS_ORIGINS         comma-separated dashboard origins
                               (default http://localhost:5173,http://127.0.0.1:5173)
     KAAL_API_TOKEN            if set, PUT /api/settings requires header X-KAAL-Token
-    KAAL_DETECTOR             yolo | rfdetr | auto (default auto: from weights suffix)
-    KAAL_MODEL_PATH           weights (.pt -> YOLO, .pth/.ckpt -> RF-DETR); default: the
+    KAAL_DETECTOR             rfdetr | onnx | yolo | auto (default auto: from weights suffix)
+    KAAL_MODEL_PATH           weights (.pth/.ckpt -> RF-DETR, .onnx -> ONNX Runtime,
+                              .pt -> YOLO); default: the
                               production RF-DETR in MODEL/datasets_registry.yaml if
                               present on disk, else MODEL/yolov8m.pt (COCO), else demo
     KAAL_RFDETR_SIZE          nano | small | medium (COCO weights when no path given)
@@ -581,7 +582,7 @@ class CameraWorker:
 
 @asynccontextmanager
 async def _lifespan(_: FastAPI):
-    backend = DETECTOR_BACKEND if DETECTOR_BACKEND in ("yolo", "rfdetr") else "auto"
+    backend = DETECTOR_BACKEND if DETECTOR_BACKEND in ("yolo", "rfdetr", "onnx") else "auto"
     logger.info("Loading detector (%s): %s", backend, MODEL_PATH)
     detector = DetectorAdapter(MODEL_PATH, backend)
     state.model_loaded = not detector.is_fallback

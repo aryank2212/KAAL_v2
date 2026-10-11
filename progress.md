@@ -4,7 +4,29 @@
 
 ---
 
-## Status: ✅ COMPLETE (Phase 0–4) + ✅ Phase 4.5 (review fixes, RF-DETR, kaal_v3 dataset)
+## Status: ✅ COMPLETE (Phase 0–4) + ✅ Phase 4.5 (review fixes, RF-DETR, kaal_v3 dataset) + ✅ Phase 4.6 (model decision, data audit, kaal_v4, docs)
+
+### Phase 4.6 — Production model decision, data audit, kaal_v4, documentation (2026-10-11)
+
+**Model decision (`MODEL/RESULTS.md` §6, `Docs/DECISIONS.md` ADR-001)**
+- [x] RF-DETR-Small vs YOLO26s trained on identical data: kaal_v3 test mAP50:95 **0.552 vs 0.517** (patched 0.516 vs 0.472); unchanged after removing 68 near-duplicate test images.
+- [x] Independent ground-vehicle test (`MODEL/build_ground_test.py`, 798 unseen photos from Orion / Russian-military-annotated / TNO Search_2): any-class mAP50 **0.722 vs 0.015** — YOLO did not generalise.
+- [x] **RF-DETR is the production detector**; YOLO kept as an optional backend. The backend now loads the registry's production weights by default (`MODEL.detectors.production_weights()`).
+
+**Data audit — problems found and fixed**
+- [x] Legacy val/test folders contain no labelled ground vehicles or soldiers (`merge_all.py` split the military set 90/10 by file order; the val slice is 181/198 unlabeled).
+- [x] Legacy `mil_*` images are mostly near-identical video frames under unrelated numbers (1,977 → ~615 scenes); a name-based re-split leaked 36% of test images → flip-aware dHash near-duplicate grouping.
+- [x] 254 unlabeled legacy frames were training as background → dropped.
+- [x] Legacy `air_*` and the military-aircraft source share photos (124 cross-split pairs) → near-duplicate grouping across **all** sources before splitting.
+
+**kaal_v4 and training**
+- [x] New sources: DVIDS military photos (`llama-farm/military-labeled-yolo`, public domain / CC0 — soldiers, tanks, APCs, artillery, MLRS) and Open Images V7 tank photos (CC BY; photos with people or group-of boxes excluded); all 6,471 VisDrone train images.
+- [x] `MODEL/datasets_registry.yaml` — every dataset's licence, status and use per model, validated by a test; finished/redundant data moved to the trash (experimental `kaal_v3_1`, extracted archives, Open Images CSV, resume checkpoints).
+- [x] `train_detector --init-weights` (warm start), `compare_detectors --dedup-against / --eval-classes / --agnostic`, ignore regions, per-source tables.
+- [ ] RF-DETR-Small v4 fine-tune on kaal_v4 and evaluation (results → `MODEL/RESULTS.md` §7, `Docs/MODEL_CARD.md`).
+
+**Documentation (`Docs/`)** — WALKTHROUGH, FILE_REFERENCE, DATASETS, DECISIONS, MODEL_CARD, FUTURE_SCALING.
+
 
 ### Phase 4.5 — Review fixes, RF-DETR detector, cleaned dataset (2026-10-11)
 
