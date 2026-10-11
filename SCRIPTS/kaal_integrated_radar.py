@@ -1,3 +1,12 @@
+"""
+kaal_integrated_radar.py — [legacy] Webcam demo: YOLOv8 detections + FFT view.
+
+Loads ``MODEL/yolov8m.pt`` (relative to this file), draws detections with a
+rough distance estimate next to the spectrum, records ``kaal_output_video.mp4``;
+press ``q`` to quit. Superseded by the backend (``Frontend_Backend/backend``),
+which uses the production RF-DETR and the fixed FFT scorer.
+"""
+
 import cv2
 import numpy as np
 import time

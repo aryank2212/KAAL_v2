@@ -1,3 +1,5 @@
+// GraphPanel — area chart of the frame-level FFT anomaly score over the last
+// KAAL_HISTORY snapshots (data[].value against data[].time).
 import { motion } from "motion/react";
 import {
   AreaChart,

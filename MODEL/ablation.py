@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Dict, List, Any, Tuple, Optional, Sequence
 
 from .config import PatchType
-from .fft_scorer import compute_fft_anomaly_score
+from .fft_scorer import DEFAULT_FFT_THRESHOLD, compute_fft_anomaly_score
 from .adversarial_patch import AdversarialPatchInjector, parse_yolo_labels
 
 logger = logging.getLogger(__name__)
@@ -147,7 +147,7 @@ class AblationStudy:
     def sweep_high_freq_ratio(
         self,
         values: Sequence[float] = (0.1, 0.15, 0.2, 0.25, 0.3, 0.35),
-        threshold: float = 0.3,
+        threshold: float = DEFAULT_FFT_THRESHOLD,
         scale_range: Tuple[float, float] = (0.1, 0.4),
         alpha: float = 0.8,
     ) -> List[Dict[str, Any]]:
@@ -206,7 +206,7 @@ class AblationStudy:
             (0.4, 0.5),
         ),
         high_freq_ratio: float = 0.25,
-        threshold: float = 0.3,
+        threshold: float = DEFAULT_FFT_THRESHOLD,
         alpha: float = 0.8,
     ) -> List[Dict[str, Any]]:
         """Sweep patch size (fraction of bbox); detection rate vs size."""
@@ -233,7 +233,7 @@ class AblationStudy:
         self,
         values: Sequence[float] = (0.2, 0.4, 0.6, 0.8, 1.0),
         high_freq_ratio: float = 0.25,
-        threshold: float = 0.3,
+        threshold: float = DEFAULT_FFT_THRESHOLD,
         scale_range: Tuple[float, float] = (0.1, 0.4),
     ) -> List[Dict[str, Any]]:
         """Sweep patch opacity; detection rate vs opacity."""
@@ -319,7 +319,7 @@ def main():
     parser.add_argument("--output", default="runs/ablation", help="Output directory")
     parser.add_argument("--n-images", type=int, default=60)
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument("--threshold", type=float, default=0.3)
+    parser.add_argument("--threshold", type=float, default=DEFAULT_FFT_THRESHOLD)
     args = parser.parse_args()
 
     study = AblationStudy(

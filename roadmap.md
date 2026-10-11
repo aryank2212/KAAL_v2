@@ -109,7 +109,7 @@
 
 ### Benchmark Matrix
 - [x] Build evaluation harness: every attack × every defense × mAP measurement — `MODEL/benchmark.py` (flag-rate matrix run model-free; mAP side GPU-gated)
-- [ ] Produce comparison table: (needs a real YOLO detector — torch/ultralytics)
+- [x] Produce comparison table — `MODEL/compare_detectors.py` (RF-DETR vs YOLO26, clean + attacked, latency); results in `MODEL/RESULTS.md` §6
 
 | Defense | Clean mAP | PGD mAP | Physical Patch mAP | Low-Freq mAP | Latency (ms) |
 |---------|-----------|---------|---------------------|--------------|---------------|
@@ -159,15 +159,17 @@
 - [ ] Identify bottleneck: is it YOLO inference or FFT computation?
 
 ### Model Optimization
-- [ ] Export to ONNX / TensorRT for edge inference
+- [x] Export to ONNX — `python -m MODEL.export_model` (RF-DETR exporter, `.onnx.json` sidecar, parity gate: ΔmAP50:95 ≤ 0.01, measured +0.0004) and an ONNX Runtime backend (`KAAL_MODEL_PATH=*.onnx`, no torch; 3.6× faster than PyTorch on CPU)
+- [ ] TensorRT FP16 engine (`--format tensorrt`) on the RTX 4060 / Jetson
 - [ ] Quantize model (INT8) and re-benchmark mAP loss
-- [ ] Test YOLOv8n vs YOLOv8s vs YOLOv8m: accuracy/speed tradeoff on target hardware
-- [ ] Consider YOLO11n / YOLO26n (newer, faster architectures — you already have `yolo26n.pt`)
+- [x] Detector choice settled on measured results: RF-DETR production, YOLO optional (`Docs/DECISIONS.md` ADR-001, `MODEL/RESULTS.md` §6)
+- [x] Consider newer architectures — RF-DETR (Nano/Small/Medium) adopted as the default detector; YOLO26 kept as baseline
+- [ ] Re-benchmark RF-DETR Nano vs Small on Jetson / Pi (ONNX/TensorRT export via `rfdetr`)
 
 ### FFT Optimization
 - [ ] Use `cv2.dft()` instead of `np.fft.fft2()` (OpenCV DFT uses hardware acceleration)
 - [ ] Downsample image before FFT (e.g., 160×120 instead of 640×480)
-- [ ] Skip FFT on frames where YOLO detects nothing (no targets = no attack risk)
+- [ ] ~~Skip FFT on frames where the detector finds nothing~~ — **rejected (unsafe):** "vanishing" patches make the detector miss the object, so the empty frames are exactly the ones to check
 - [ ] Batch FFT computation across multiple bbox crops
 
 ---

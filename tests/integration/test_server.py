@@ -1,7 +1,7 @@
 """
 test_server.py — Integration test for the FastAPI backend.
 
-Starts the app (with a stubbed YOLO so no model file/GPU is required), hits
+Starts the app with the stock YOLO weights (stubbed when Ultralytics is absent), hits
 `/api/python-data`, and verifies the JSON schema the frontend consumes.
 
 Mirrors the Phase 2 roadmap requirement:
@@ -23,19 +23,21 @@ SERVER_PATH = Path(__file__).resolve().parents[2] / "Frontend_Backend" / "backen
 
 @pytest.fixture(scope="module")
 def client():
-    import os
+    with pytest.MonkeyPatch.context() as mp:
+        # Never touch the real camera. Pin the stock YOLO weights (stubbed when
+        # Ultralytics is absent) instead of the registry's production model,
+        # so the test never depends on trained weights being on disk.
+        mp.setenv("KAAL_ENABLE_CAMERA", "0")
+        mp.setenv("KAAL_MODEL_PATH", str(SERVER_PATH.parents[2] / "MODEL" / "yolov8m.pt"))
+        spec = importlib.util.spec_from_file_location("kaal_server_under_test", SERVER_PATH)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
 
-    # Never touch the real camera in tests.
-    os.environ["KAAL_ENABLE_CAMERA"] = "0"
-    spec = importlib.util.spec_from_file_location("kaal_server_under_test", SERVER_PATH)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+        from fastapi.testclient import TestClient
 
-    from fastapi.testclient import TestClient
-
-    with TestClient(module.app) as c:
-        yield c
+        with TestClient(module.app) as c:
+            yield c
 
 
 def test_python_data_schema(client):
@@ -134,3 +136,147 @@ async def _collect_frames(gen, max_frames):
             break
     await gen.aclose()
     return out
+
+
+# ── Regression tests for the Phase 4 review findings ─────────────────────
+
+
+def _server():
+    return sys.modules["kaal_server_under_test"]
+
+
+def test_worker_emit_reaches_broadcast_queue(client):
+    """A snapshot emitted from the worker thread must land in the asyncio queue.
+
+    Regression: `_emit` used to schedule an `async def` with call_soon_threadsafe,
+    creating a coroutine that was never awaited — live WS clients froze.
+    """
+    import asyncio
+    import threading
+
+    module = _server()
+
+    async def scenario():
+        queue = asyncio.Queue(maxsize=4)
+        original = module.state.queue
+        module.state.queue = queue
+        try:
+            worker = module.CameraWorker(module.DetectorAdapter("", "yolo"))
+            worker._loop = asyncio.get_running_loop()
+            t = threading.Thread(target=worker._emit, args=({"frame_no": 1},))
+            t.start()
+            t.join()
+            await asyncio.sleep(0.1)
+            return queue.qsize(), (queue.get_nowait() if queue.qsize() else None)
+        finally:
+            module.state.queue = original
+
+    size, item = asyncio.run(scenario())
+    assert size == 1
+    assert item == {"frame_no": 1}
+
+
+def test_enqueue_latest_drops_oldest_when_full():
+    import asyncio
+
+    module = _server()
+    queue = asyncio.Queue(maxsize=2)
+    for i in range(5):
+        module.enqueue_latest(queue, {"i": i})
+    assert [queue.get_nowait()["i"] for _ in range(queue.qsize())] == [3, 4]
+
+
+def test_settings_reject_non_finite(client):
+    resp = client.put(
+        "/api/settings",
+        content=b'{"fft_threshold": NaN}',
+        headers={"Content-Type": "application/json"},
+    )
+    assert resp.status_code == 422
+    assert client.get("/api/settings").json()["fft_threshold"] == pytest.approx(
+        _server().settings.snapshot()["fft_threshold"]
+    )
+
+
+def test_settings_token_required_when_configured(client, monkeypatch):
+    monkeypatch.setattr(_server(), "API_TOKEN", "s3cret")
+    assert client.put("/api/settings", json={"conf": 0.5}).status_code == 401
+    bad = client.put("/api/settings", json={"conf": 0.5}, headers={"X-KAAL-Token": "nope"})
+    assert bad.status_code == 401
+    ok = client.put("/api/settings", json={"conf": 0.5}, headers={"X-KAAL-Token": "s3cret"})
+    assert ok.status_code == 200
+
+
+def test_cors_rejects_foreign_origin(client):
+    resp = client.options(
+        "/api/settings",
+        headers={
+            "Origin": "https://evil.example",
+            "Access-Control-Request-Method": "PUT",
+            "Access-Control-Request-Headers": "content-type",
+        },
+    )
+    assert resp.headers.get("access-control-allow-origin") != "https://evil.example"
+
+
+def test_cors_allows_dashboard_origin(client):
+    resp = client.options(
+        "/api/settings",
+        headers={"Origin": "http://localhost:5173", "Access-Control-Request-Method": "PUT"},
+    )
+    assert resp.headers.get("access-control-allow-origin") == "http://localhost:5173"
+
+
+def test_websocket_rejects_foreign_origin(client):
+    from starlette.websockets import WebSocketDisconnect
+
+    with pytest.raises(WebSocketDisconnect):
+        with client.websocket_connect("/ws", headers={"origin": "https://evil.example"}) as ws:
+            ws.receive_json()
+
+
+class _RecordingDetector:
+    """DetectorAdapter stand-in that records the confidence it was called with."""
+
+    def __init__(self):
+        self.confs = []
+        self.names = {0: "tank"}
+
+    def info(self):
+        return {"backend": "fake", "weights": None, "fallback": False}
+
+    def predict(self, frame, conf):
+        self.confs.append(conf)
+        return [
+            {"bbox": [100, 100, 300, 260], "confidence": 0.9, "class_id": 0, "class_name": "tank"}
+        ]
+
+
+def test_process_frame_uses_live_conf_and_scores_regions(client):
+    import numpy as np
+
+    module = _server()
+    detector = _RecordingDetector()
+    worker = module.CameraWorker(detector)
+    module.settings.update(fft_threshold=None, conf=0.7)
+
+    frame = np.random.RandomState(0).randint(0, 255, (480, 640, 3), dtype=np.uint8)
+    snap = worker.process_frame(frame)
+
+    assert detector.confs == [pytest.approx(0.7)]
+    det = snap["detections"][0]
+    assert det["label"] == "tank"
+    assert det["anomaly_score"] is not None  # region was FFT-scored
+    assert "temporal" in snap and "detector" in snap
+    assert snap["frame"].shape == (480, 640, 3)  # within PROCESS_SIDE: not resized
+
+
+def test_metrics_sampler_throttles_nvidia_smi(monkeypatch):
+    module = _server()
+    calls = []
+    monkeypatch.setattr(module, "_gpu_metrics", lambda: calls.append(1) or None)
+    sampler = module.MetricsSampler(interval=60.0)
+    for _ in range(10):
+        metrics = sampler.sample(latency_ms=12.5)
+    assert len(calls) == 1
+    assert metrics["latency"] == 12.5

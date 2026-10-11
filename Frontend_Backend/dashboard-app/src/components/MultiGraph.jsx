@@ -1,3 +1,6 @@
+// MultiGraph — three time series from the snapshot history: frame FFT score
+// (value), % of boxes flagged by per-box FFT (value2) and the temporal-cue
+// residual ×100 (value3).
 import { motion } from "motion/react";
 import {
   AreaChart,
@@ -103,7 +106,7 @@ function MultiGraph({ data }) {
               strokeWidth={1.5}
               fill="url(#alphaGradient)"
               dot={false}
-              name="Signal α"
+              name="FFT score"
             />
             <Area
               type="monotone"
@@ -112,7 +115,7 @@ function MultiGraph({ data }) {
               strokeWidth={1.5}
               fill="url(#betaGradient)"
               dot={false}
-              name="Signal β"
+              name="% boxes flagged"
             />
             <Area
               type="monotone"
@@ -121,7 +124,7 @@ function MultiGraph({ data }) {
               strokeWidth={1.5}
               fill="url(#gammaGradient)"
               dot={false}
-              name="Signal γ"
+              name="Temporal ×100"
             />
           </AreaChart>
         </ResponsiveContainer>

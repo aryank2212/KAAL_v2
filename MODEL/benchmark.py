@@ -177,7 +177,7 @@ def generate_universal_perturbation(
     The default (``low_freq=True``) is a smoothed random field clipped to
     ``+-epsilon``. Smoothing keeps spectral energy in the low-frequency band,
     which is exactly the FFT detector's failure case (documented in
-    `docs/failure-analysis.md`). ``low_freq=False`` yields a sharp noise
+    `MODEL/RESULTS.md` §1). ``low_freq=False`` yields a sharp noise
     pattern that the FFT detector catches easily.
     """
     if not images:
@@ -316,7 +316,7 @@ class BenchmarkRunner:
         detector:   Optional detector implementing `predict(image) -> [dict]`.
                     When None, only the model-free FFT detectability matrix is
                     produced.
-        fft_threshold:   FFT flagging threshold (default 0.3).
+        fft_threshold:   FFT flagging threshold (default: calibrated p99 of clean samples).
         high_freq_ratio: FFT high-frequency band fraction.
         n_images:  Number of sorted images to sample.
         seed:      Random seed for attack reproducibility.

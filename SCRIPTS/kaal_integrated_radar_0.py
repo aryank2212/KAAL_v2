@@ -1,3 +1,8 @@
+"""
+kaal_integrated_radar_0.py — [legacy] Earlier version of kaal_integrated_radar.py
+(hard-coded ``D:\\`` model path, no distance estimate or recording).
+"""
+
 import cv2
 import numpy as np
 import time

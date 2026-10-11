@@ -9,6 +9,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Tuple, Optional
 
+from .fft_scorer import DEFAULT_FFT_THRESHOLD
+
 
 class DefenseMode(Enum):
     """Available defense strategies during training and inference."""
@@ -69,7 +71,9 @@ class Config:
     fft_threshold: Optional[float] = (
         None  # Anomaly threshold; None = use calibration profile or default
     )
-    fft_default_threshold: float = 0.3  # Fallback when no calibration profile exists
+    fft_default_threshold: float = (
+        DEFAULT_FFT_THRESHOLD  # Fallback when no calibration profile exists
+    )
     fft_high_freq_ratio: float = 0.25  # Fraction of spectrum considered "high-freq"
     fft_region_mode: bool = True  # Per-bbox crop FFT (Phase 1: per-object flags, not whole-frame)
     fft_region_min_size: int = 16  # Skip regions smaller than this many pixels

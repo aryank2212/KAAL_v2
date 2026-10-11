@@ -1,3 +1,19 @@
+"""
+merge_all.py — [legacy] Built the original merged KAAL dataset (Datasets/master_data).
+
+  * ``air_*``  Roboflow ``aircraft.v1i.yolov8`` export, its own train/valid/test
+               splits, classes 0–39
+  * ``mil_*``  ``military-artillery-and-tanks`` CVAT export (COCO json ->
+               YOLO), classes 40–47, split 90/10 into train/val by file order
+               (the val slice is almost entirely unlabeled; nothing in test)
+  * ``car_*``  ``aerial_cars``, classes 48–51
+
+``MODEL/dataset.py`` then added augmented copies, giving the "legacy" source
+of ``kaal_v3``/``kaal_v4``. The split and duplicate problems this caused are
+documented in Docs/DATASETS.md §3.1; ``MODEL/build_dataset.py`` supersedes it.
+Paths are relative to the original Windows working directory.
+"""
+
 import os
 import json
 import yaml

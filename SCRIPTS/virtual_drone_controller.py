@@ -1,3 +1,11 @@
+"""
+virtual_drone_controller.py — [research] Thin wrapper over the AirSim multirotor API.
+
+Connect, take off, hover, grab camera frames, and move by position or body
+velocity (sync and async). Used by the simulation demos; needs a running
+AirSim environment (``requirements-sim.txt``).
+"""
+
 import airsim
 import time
 import sys

@@ -10,8 +10,9 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Anchored: an unanchored "lib/" also hid Frontend_Backend/dashboard-app/src/lib/
+/lib/
+/lib64/
 parts/
 sdist/
 var/
@@ -96,6 +97,9 @@ Thumbs.db
 # Keep example videos if needed (uncomment to keep specific files)
 # !example_output.mp4
 
+# Downloaded / generated datasets (python -m MODEL.fetch_datasets / MODEL.build_dataset)
+MODEL/Datasets/
+
 # Processed outputs
 Processed_Outputs/
 output/
@@ -112,3 +116,6 @@ AirSim_Environment/Blocks/
 # Git
 .git/
 *.orig
+
+# Tool caches
+.serena/

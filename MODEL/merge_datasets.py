@@ -1,3 +1,13 @@
+"""
+merge_datasets.py — [legacy] Merge two YOLO datasets with class-id offsets.
+
+Copies dataset 1 as-is and dataset 2 with its class ids shifted past
+dataset 1's, prefixing file names (``aircraft_`` / ``ground_``). The
+``__main__`` block has hard-coded ``D:/...`` paths from the original Windows
+setup. Superseded by ``MODEL/build_dataset.py`` (taxonomy mapping, leakage
+control, registry).
+"""
+
 import os
 import shutil
 import yaml

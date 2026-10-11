@@ -1,3 +1,10 @@
+// App.jsx — root of the KAAL tactical dashboard.
+// Owns the run/stop state, the (cosmetic) model label and the live settings.
+// Everything else is derived from the latest backend snapshot delivered by
+// useDefenseSocket (WebSocket /ws, REST polling fallback): video feed,
+// detections, alert state (audio beep on alert onset), graphs and system
+// metrics. Threshold / confidence changes go to PUT /api/settings, with an
+// X-KAAL-Token header when VITE_KAAL_API_TOKEN is set.
 import { useState, useEffect, useCallback } from "react";
 import Sidebar from "./components/Sidebar";
 import Navbar from "./components/Navbar";
@@ -11,24 +18,24 @@ import StatusBar from "./components/StatusBar";
 import SettingsPanel from "./components/SettingsPanel";
 import useDefenseSocket from "./lib/useDefenseSocket";
 
+const VIDEO_FEED = "/api/video_feed";
+const API_TOKEN = import.meta.env.VITE_KAAL_API_TOKEN;
+const EMPTY_METRICS = {
+  cpu: 0,
+  memory: 0,
+  gpu: null,
+  bandwidth: 0,
+  latency: 0,
+  uptime: "00:00:00",
+};
+
 function App() {
   const [selectedModel, setSelectedModel] = useState("Model 1");
-  const [data, setData] = useState([]);
-  const [image, setImage] = useState(null);
   const [isRunning, setIsRunning] = useState(true);
-  const [systemMetrics, setSystemMetrics] = useState({
-    cpu: 0,
-    memory: 0,
-    gpu: null,
-    bandwidth: 0,
-    latency: 0,
-    uptime: "00:00:00",
-  });
-  const [detections, setDetections] = useState([]);
-  const [attack, setAttack] = useState(false);
-  const [alertActive, setAlertActive] = useState(false);
-  const [settings, setSettings] = useState({ fft_threshold: 0.5, conf: 0.4 });
-  const [swarmData, setSwarmData] = useState({
+  const [settings, setSettings] = useState({ fft_threshold: null, conf: 0.4 });
+  // Swarm telemetry comes from the swarm canvas (alive / kia / mode); the
+  // defense snapshot only contributes status + noise below.
+  const [swarmTelemetry, setSwarmTelemetry] = useState({
     status: "NOMINAL",
     alive: 0,
     kia: 0,
@@ -38,38 +45,36 @@ function App() {
   // Real-time stream (WebSocket with polling fallback).
   const { snapshot, connected } = useDefenseSocket(isRunning ? 1000 : null);
 
-  useEffect(() => {
-    setImage("/api/video_feed");
-  }, [selectedModel]);
+  // Everything below is derived from the latest snapshot — no state copies.
+  const data = snapshot?.data ?? [];
+  const systemMetrics = snapshot?.systemMetrics ?? EMPTY_METRICS;
+  const detections = snapshot?.detections ?? [];
+  const attack = Boolean(snapshot?.is_attack);
+  const flaggedCount = snapshot?.flagged_count ?? 0;
+  const temporal = snapshot?.temporal ?? null;
+  const detector = snapshot?.detector ?? null;
+  const fftThreshold = snapshot?.fft_threshold ?? settings.fft_threshold;
+  const swarmData = {
+    ...swarmTelemetry,
+    status: snapshot?.status ?? swarmTelemetry.status,
+    noise_score: snapshot?.noise_score,
+  };
 
-  // Apply incoming snapshot to dashboard state.
+  // Alert system: visual banner + audio beep on attack onset. The onset is
+  // detected while rendering (React's "adjust state on prop change" pattern),
+  // the effect only handles the beep and the timed dismissal.
+  const [prevAttack, setPrevAttack] = useState(attack);
+  const [alertActive, setAlertActive] = useState(false);
+  if (attack !== prevAttack) {
+    setPrevAttack(attack);
+    if (attack) setAlertActive(true);
+  }
   useEffect(() => {
-    if (!snapshot) return;
-    setData(snapshot.data || []);
-    setSystemMetrics(snapshot.systemMetrics || systemMetrics);
-    setDetections(snapshot.detections || []);
-    setAttack(Boolean(snapshot.is_attack));
-    setSettings((prev) => ({
-      ...prev,
-      fft_threshold: snapshot.fft_threshold ?? prev.fft_threshold,
-    }));
-    setSwarmData((prev) => ({
-      ...prev,
-      status: snapshot.status || prev.status,
-      noise_score: snapshot.noise_score,
-      alive: snapshot.flagged_count !== undefined ? snapshot.flagged_count : prev.alive,
-      kia: snapshot.flagged_count !== undefined ? snapshot.flagged_count : prev.kia,
-    }));
-  }, [snapshot]);
-
-  // Alert system: visual banner + audio beep on attack onset.
-  useEffect(() => {
-    if (!attack) return;
-    setAlertActive(true);
+    if (!alertActive) return undefined;
     playAlertBeep();
     const t = setTimeout(() => setAlertActive(false), 3000);
     return () => clearTimeout(t);
-  }, [attack]);
+  }, [alertActive]);
 
   // Load live defense settings once.
   useEffect(() => {
@@ -81,9 +86,11 @@ function App() {
 
   const applySettings = useCallback(async (next) => {
     try {
+      const headers = { "Content-Type": "application/json" };
+      if (API_TOKEN) headers["X-KAAL-Token"] = API_TOKEN;
       const res = await fetch("/api/settings", {
         method: "PUT",
-        headers: { "Content-Type": "application/json" },
+        headers,
         body: JSON.stringify(next),
       });
       if (!res.ok) return false;
@@ -114,18 +121,20 @@ function App() {
               swarmData={swarmData}
               connected={connected}
               attack={attack}
-              fftThreshold={settings.fft_threshold}
-              flaggedCount={swarmData.kia}
+              fftThreshold={fftThreshold}
+              flaggedCount={flaggedCount}
+              temporal={temporal}
+              detector={detector}
             />
           </div>
 
           <div className="col-span-6 row-span-2 glass active">
             <MainPanel
-              image={image}
+              image={VIDEO_FEED}
               selectedModel={selectedModel}
               isRunning={isRunning}
               swarmData={swarmData}
-              onSwarmData={setSwarmData}
+              onSwarmData={setSwarmTelemetry}
               detections={detections}
               attack={attack}
               alertActive={alertActive}
@@ -146,10 +155,15 @@ function App() {
                 setSelectedModel={setSelectedModel}
                 isRunning={isRunning}
                 setIsRunning={setIsRunning}
+                systemMetrics={systemMetrics}
               />
             </div>
             <div className="flex-1 glass min-h-0">
-              <SettingsPanel settings={settings} onApply={applySettings} />
+              <SettingsPanel
+                key={`${fftThreshold}-${settings.conf}`}
+                settings={{ fft_threshold: fftThreshold, conf: settings.conf }}
+                onApply={applySettings}
+              />
             </div>
           </div>
 

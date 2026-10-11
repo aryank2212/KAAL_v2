@@ -1,3 +1,10 @@
+"""
+adv_train.py — [legacy] ``RobustDetectionTrainer``: Ultralytics DetectionTrainer
+that perturbs each training batch with PGD (``adv_epsilon`` default 4/255,
+``adv_iters`` default 5) before the forward pass. Experimental; patch-aware
+adversarial training for RF-DETR is a FUTURE_SCALING item.
+"""
+
 import torch
 from ultralytics.models.yolo.detect.train import DetectionTrainer
 

@@ -1,3 +1,8 @@
+"""
+metrics.py — [legacy] Container for clean / adversarial / defended mAP, TP/FP/FN
+counts and anomaly-score AUROC used by ``MODEL/evaluation/evaluate.py``.
+"""
+
 import numpy as np
 
 class RobustnessMetrics:

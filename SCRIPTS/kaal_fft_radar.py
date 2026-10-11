@@ -1,3 +1,11 @@
+"""
+kaal_fft_radar.py — [legacy] Webcam FFT "radar" demo.
+
+Shows the camera feed next to its log-magnitude spectrum and an anomaly
+readout; press ``q`` to quit. Uses the original (pre-fix) spectrum view, not
+``MODEL/fft_scorer.py`` — the live system is the FastAPI backend + dashboard.
+"""
+
 import cv2
 import numpy as np
 import time

@@ -1,3 +1,14 @@
+"""
+inference_quality_fix.py — [legacy] YOLO inference tuned against fragmented boxes.
+
+Stricter settings than the defaults — conf 0.45, NMS IoU 0.40, class-agnostic
+NMS, at most 30 detections — so wings or edges of one aircraft are not
+reported as separate objects. The production detector (RF-DETR) is NMS-free;
+the YOLO backend in ``MODEL/detectors.py`` uses class-agnostic NMS at 0.45.
+
+    python -m MODEL.inference_quality_fix --model best.pt --source <images|video> --out runs/detect/robust_inference
+"""
+
 import os
 import argparse
 import logging

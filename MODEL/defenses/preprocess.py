@@ -1,3 +1,13 @@
+"""
+preprocess.py — [legacy] Input-transform defenses on image tensors.
+
+JPEG compression, bit-depth reduction and Gaussian blur on (B, 3, H, W)
+tensors in [0, 1], chained by ``defense_pipeline``. The Phase 3 benchmark
+(``MODEL/benchmark.py``) re-implements these in NumPy and measured that
+bit-depth / feature squeezing push the FFT cue's clean false-positive rate to
+100% and blur hides real attacks (``MODEL/RESULTS.md`` §2–3).
+"""
+
 import torch
 import torch.nn.functional as F
 import torchvision.transforms.functional as TF

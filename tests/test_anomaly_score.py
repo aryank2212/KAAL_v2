@@ -90,3 +90,27 @@ class TestRegionScores:
         boxes = [(10, 10, 60, 60), (20, 20, 80, 80)]
         scores = compute_region_scores(img, boxes, min_size=16)
         assert len(scores) == len(boxes)
+
+
+class TestShapeInvariance:
+    """Regression: the old log-magnitude scorer tracked crop *shape* (0.5 square vs
+    0.9 elongated on the same content). The band is now defined in cycles/pixel."""
+
+    def test_elongated_crops_score_like_square_crops(self):
+        rng = np.random.RandomState(0)
+        texture = cv2.GaussianBlur(rng.randint(0, 255, (600, 600, 3), dtype=np.uint8), (5, 5), 0)
+        square = compute_fft_anomaly_score(texture[100:340, 100:340])
+        wide = compute_fft_anomaly_score(texture[250:350, 0:600])
+        tall = compute_fft_anomaly_score(texture[0:600, 250:350])
+        assert wide == pytest.approx(square, rel=0.25)
+        assert tall == pytest.approx(square, rel=0.25)
+
+    def test_white_noise_far_above_smooth_content(self):
+        rng = np.random.RandomState(1)
+        smooth = _smooth(rng, 200, 200)
+        noise = rng.randint(0, 256, (200, 200, 3), dtype=np.uint8)
+        assert compute_fft_anomaly_score(noise) > 10 * compute_fft_anomaly_score(smooth)
+
+    def test_invalid_band_rejected(self):
+        with pytest.raises(ValueError):
+            compute_fft_anomaly_score(np.zeros((32, 32), dtype=np.uint8), high_freq_ratio=1.0)

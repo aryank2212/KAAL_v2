@@ -7,6 +7,7 @@ profile round-trips, and the calibrated-threshold loader fallbacks.
 
 import pytest
 
+from MODEL.fft_scorer import DEFAULT_FFT_THRESHOLD
 from MODEL.calibration import (
     FFTCalibrator,
     CalibrationProfile,
@@ -30,7 +31,7 @@ class TestThresholdComputation:
         assert thr == pytest.approx(expected)
 
     def test_empty_scores_falls_back(self):
-        assert FFTCalibrator.compute_threshold([], "percentile") == 0.3
+        assert FFTCalibrator.compute_threshold([], "percentile") == DEFAULT_FFT_THRESHOLD
 
 
 class TestProfileBuild:
@@ -92,3 +93,22 @@ class TestLoader:
         with open(path, "w") as f:
             f.write("{not json")
         assert load_calibrated_threshold(path, 0.3) == 0.3
+
+
+def test_collect_box_scores_scores_each_gt_box(tmp_path):
+    import cv2
+    import numpy as np
+
+    from MODEL.calibration import FFTCalibrator
+
+    images, labels = tmp_path / "images", tmp_path / "labels"
+    images.mkdir()
+    labels.mkdir()
+    rng = np.random.RandomState(0)
+    img = cv2.GaussianBlur(rng.randint(0, 255, (200, 200, 3), dtype=np.uint8), (15, 15), 0)
+    cv2.imwrite(str(images / "a.png"), img)
+    # two scoreable boxes + one too small to score
+    (labels / "a.txt").write_text("0 0.3 0.3 0.3 0.3\n1 0.7 0.7 0.3 0.3\n0 0.5 0.5 0.02 0.02\n")
+    scores = FFTCalibrator().collect_box_scores(str(images), str(labels))
+    assert len(scores) == 2
+    assert all(0.0 <= s <= 1.0 for s in scores)

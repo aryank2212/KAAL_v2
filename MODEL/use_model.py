@@ -1,3 +1,11 @@
+"""
+use_model.py — [legacy] One-off YOLO inference over a folder.
+
+Hard-coded Windows paths (``D:\\...``) from the original setup; edit them
+before running. For current use: ``python -m MODEL.compare_detectors`` or the
+backend (``KAAL_CAMERA_SOURCE`` for video files).
+"""
+
 import logging
 from ultralytics import YOLO
 

@@ -6,7 +6,7 @@ import { motion } from "motion/react";
 // via PUT /api/settings so changes apply without restarting the pipeline.
 
 export default function SettingsPanel({ settings = {}, onApply }) {
-  const [fft, setFft] = useState(settings.fft_threshold ?? 0.5);
+  const [fft, setFft] = useState(settings.fft_threshold ?? 0.08);
   const [conf, setConf] = useState(settings.conf ?? 0.4);
   const [saved, setSaved] = useState(false);
 
@@ -40,8 +40,8 @@ export default function SettingsPanel({ settings = {}, onApply }) {
         label="FFT THRESHOLD"
         value={fft}
         min={0.0}
-        max={1.0}
-        step={0.01}
+        max={0.5}
+        step={0.005}
         display={fft.toFixed(3)}
         accent="#22d3ee"
         onChange={(v) => handleChange("fft_threshold", v)}

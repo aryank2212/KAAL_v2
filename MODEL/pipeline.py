@@ -1,3 +1,16 @@
+"""
+pipeline.py — [research] Phase 0 CLI: Config -> AdversarialTrainer -> RobustnessEvaluator.
+
+Optionally fine-tunes a YOLO model with a ``DefenseMode`` (``none``,
+``adversarial_training``, ``dual_stream``) and then runs the clean / attacked /
+defended evaluation of ``MODEL/evaluator.py``.
+
+    python -m MODEL.pipeline --data <data.yaml> --model yolov8n.pt [--train] [--defense dual_stream]
+
+The current detector workflow is ``train_detector.py`` + ``compare_detectors.py``
+(RF-DETR production, Docs/DECISIONS.md ADR-001).
+"""
+
 import os
 import logging
 import argparse
@@ -124,7 +137,7 @@ def main():
         "--fft-threshold",
         type=float,
         default=None,
-        help="FFT anomaly threshold (default: calibration profile or 0.3)",
+        help="FFT anomaly threshold (default: calibration profile or MODEL.fft_scorer.DEFAULT_FFT_THRESHOLD)",
     )
     parser.add_argument(
         "--high-freq-ratio",

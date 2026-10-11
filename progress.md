@@ -4,7 +4,51 @@
 
 ---
 
-## Status: ✅ COMPLETE (Phase 0) + ✅ COMPLETE (Phase 1) + ✅ COMPLETE (Phase 2) + ✅ COMPLETE (Phase 3) + ✅ COMPLETE (Phase 4)
+## Status: ✅ COMPLETE (Phase 0–4) + ✅ Phase 4.5 (review fixes, RF-DETR, kaal_v3 dataset) + ✅ Phase 4.6 (model decision, data audit, kaal_v4, docs)
+
+### Phase 4.6 — Production model decision, data audit, kaal_v4, documentation (2026-10-11)
+
+**Model decision (`MODEL/RESULTS.md` §6, `Docs/DECISIONS.md` ADR-001)**
+- [x] RF-DETR-Small vs YOLO26s trained on identical data: kaal_v3 test mAP50:95 **0.552 vs 0.517** (patched 0.516 vs 0.472); unchanged after removing 68 near-duplicate test images.
+- [x] Independent ground-vehicle test (`MODEL/build_ground_test.py`, 798 unseen photos from Orion / Russian-military-annotated / TNO Search_2): any-class mAP50 **0.722 vs 0.015** — YOLO did not generalise.
+- [x] **RF-DETR is the production detector**; YOLO kept as an optional backend. The backend now loads the registry's production weights by default (`MODEL.detectors.production_weights()`).
+
+**Data audit — problems found and fixed**
+- [x] Legacy val/test folders contain no labelled ground vehicles or soldiers (`merge_all.py` split the military set 90/10 by file order; the val slice is 181/198 unlabeled).
+- [x] Legacy `mil_*` images are mostly near-identical video frames under unrelated numbers (1,977 → ~615 scenes); a name-based re-split leaked 36% of test images → flip-aware dHash near-duplicate grouping.
+- [x] 254 unlabeled legacy frames were training as background → dropped.
+- [x] Legacy `air_*` and the military-aircraft source share photos (124 cross-split pairs) → near-duplicate grouping across **all** sources before splitting.
+
+**kaal_v4 and training**
+- [x] New sources: DVIDS military photos (`llama-farm/military-labeled-yolo`, public domain / CC0 — soldiers, tanks, APCs, artillery, MLRS) and Open Images V7 tank photos (CC BY; photos with people or group-of boxes excluded); all 6,471 VisDrone train images.
+- [x] `MODEL/datasets_registry.yaml` — every dataset's licence, status and use per model, validated by a test; finished/redundant data moved to the trash (experimental `kaal_v3_1`, extracted archives, Open Images CSV, resume checkpoints).
+- [x] `train_detector --init-weights` (warm start), `compare_detectors --dedup-against / --eval-classes / --agnostic`, ignore regions, per-source tables.
+- [x] RF-DETR-Small v4 fine-tune on kaal_v4 (warm start, 10 epochs, 2.43 h) — **production**: kaal_v4 test mAP50:95 0.313 → **0.405**, unseen ground vehicles any-class mAP50 0.720 → **0.915**, soldier 0.00 → 0.30, artillery 0.07 → 0.26 (`MODEL/RESULTS.md` §7, `Docs/MODEL_CARD.md`).
+- [x] Deployment: ONNX export with parity gate (v4 Δ +0.005 mAP50:95 on 200 val images), ONNX Runtime backend verified live without torch; attack demo with v4 flags the patch 4 frames after onset with no false alarms.
+
+**Documentation (`Docs/`)** — WALKTHROUGH, FILE_REFERENCE, DATASETS, DECISIONS, MODEL_CARD, FUTURE_SCALING.
+
+
+### Phase 4.5 — Review fixes, RF-DETR detector, cleaned dataset (2026-10-11)
+
+**Bugs fixed (from the repo review)**
+- [x] **Live dashboard froze after the first message** — `CameraWorker._emit` scheduled an `async def` via `call_soon_threadsafe` (coroutine never awaited, queue never filled). Now enqueues directly with drop-oldest; regression test added.
+- [x] **FFT score tracked box shape, not content** — rewritten as a Hann-windowed power ratio in cycles/pixel. Real-photo AUROC 0.59 → 0.89 (noise patch), 0.53 → 0.85 (pattern). One shared `DEFAULT_FFT_THRESHOLD`. See `MODEL/RESULTS.md` §0.
+- [x] **Fresh clone could not build the dashboard** — unanchored `lib/` in `.gitignore` hid `dashboard-app/src/lib/`.
+- [x] **Confidence slider was a no-op** — live `conf` now reaches the detector every frame.
+- [x] **Unauthenticated control plane** — default bind 127.0.0.1, CORS + WebSocket origin allow-list, optional `KAAL_API_TOKEN`, Pydantic validation (NaN/inf → 422).
+- [x] **Metrics** — nvidia-smi throttled to 1 Hz (was spawned every frame), real latency, bandwidth over real elapsed time and labelled KB/s; dashboard `alive`/`kia` no longer overwritten by the flag count; fake random "CPU LOAD" replaced.
+- [x] **Evaluator** — attacked and defended passes now use identical (seeded) patches; the misleading "mAP recovery" claim removed (the defense flags, it does not correct).
+- [x] **CI** — server tests actually run (server extra installed), torch no longer installed for CPU tests (`ml` extra), Python 3.11 + 3.12 matrix, backend linted + type-checked, new dashboard job (eslint + vite build), GPU workflow manual-only.
+- [x] Dashboard ESLint 16 errors → 0; unused npm deps removed (axios, clsx, tailwind-merge); duplicate `SCRIPTS/b.py` and empty `ui/dottedglowback` removed; READMEs merged.
+
+**New**
+- [x] `MODEL/detectors.py` — YOLO + **RF-DETR** (ICLR 2026, Apache-2.0) behind one interface; used by the defense, server (`KAAL_DETECTOR`, `KAAL_MODEL_PATH`) and benchmarks.
+- [x] Temporal-cue fusion — `StreamingTemporalCue`: per-cell residuals with illumination normalization, warm-up calibration, persistence (moving objects ignored), masked background updates, local absorb / global re-baseline. Wired into `DualStreamDefense.predict()` and the live server; shown on the dashboard. Verified live: a printed-noise patch on a tank (≈0.5% of the frame) → cell residual 0.284 vs threshold 0.01; the frame-mean version had missed it (0.00097 vs 0.00121).
+- [x] Live demo without a webcam — `KAAL_CAMERA_SOURCE` (looping video file / stream URL) + `python -m MODEL.make_demo_video` (clean → patch → clean clip). Server now keeps the aspect ratio (was a fixed 640×480 squash); dashboard WebSocket auto-reconnects with backoff (was stuck on polling after a backend restart).
+- [x] `MODEL/fetch_datasets.py`, `MODEL/build_dataset.py` — `kaal_v3`: legacy set (corrupt class 0 dropped, split-leakage removed) + VisDrone2019-DET + military-aircraft subset + Simuletic UAV tanks, 9-class taxonomy, `manifest.json` with counts and licenses.
+- [x] `MODEL/train_detector.py`, `MODEL/compare_detectors.py` — matched RF-DETR vs YOLO26 training and a clean + under-attack COCO mAP / latency / FFT-flag comparison.
+- [x] Tests: 116 → 160 passing.
 
 ### Phase 4 — Backend & Dashboard
 
@@ -138,7 +182,6 @@
 
 ### Queued
 - **Phase 3 mAP matrix (GPU-gated):** re-run the attack x defense matrix with a real YOLO detector (`MODEL/*.pt`) to fill the roadmap mAP comparison table; requires torch/ultralytics
-- **Fusion deployment:** wire the temporal cue into `DualStreamDefense.predict()` alongside the FFT region scoring
 - **Phase 5 (roadmap):** Deployment & Hardening — Dockerize, JSON structured logging, `/metrics`, ONNX export, security hardening
 
 ---

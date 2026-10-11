@@ -1,3 +1,13 @@
+"""
+anomaly.py — [legacy] Anomaly detection from detector confidence entropy.
+
+``AnomalyDetector`` scores a prediction by the entropy of its class
+confidences, calibrates a percentile threshold on clean data and flags
+outliers. An early alternative to the model-free FFT and temporal cues
+(``fft_scorer.py``, ``temporal_scorer.py``), which replaced it because they
+do not depend on the detector that the attack is fooling.
+"""
+
 import torch
 import numpy as np
 import logging

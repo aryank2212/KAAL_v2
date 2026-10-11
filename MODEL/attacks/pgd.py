@@ -1,3 +1,13 @@
+"""
+pgd.py — [legacy] Projected Gradient Descent against YOLOv8 with a proxy loss.
+
+``compute_proxy_loss`` stands in for Ultralytics' target assignment: it
+pushes the max class confidence down ("suppress") or up ("hallucinate").
+``pgd_attack`` iterates signed steps inside an L-inf ball of ``epsilon``.
+Used by ``MODEL/training/adv_train.py`` and ``MODEL/evaluation/evaluate.py``
+(both legacy). Not on the live path.
+"""
+
 import torch
 
 def compute_proxy_loss(preds, target_type="suppress"):

@@ -1,3 +1,6 @@
+// MainPanel — centre view: the annotated camera feed (MJPEG /api/video_feed,
+// default) or, via the toggle button, the swarm simulation canvas; shows
+// detection tags, flagged boxes and a pulsing border while an alert is active.
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 import KaalSwarmCanvas from "./KaalSwarmCanvas";

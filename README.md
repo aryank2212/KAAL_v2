@@ -1,154 +1,248 @@
 # KAAL: Autonomous Swarm & Adversarial Defense Framework
-**KAAL is a hierarchical multi-agent framework for sustainable and autonomous drone swarms combining flocking instincts with adversarial threat detection.**
+**KAAL is a hierarchical multi-agent framework for autonomous drone swarms that combines flocking instincts with adversarial threat detection.**
 
-[![CI — lint, typecheck, tests](https://github.com/aryank2212/KAAL/actions/workflows/ci.yml/badge.svg)](https://github.com/aryank2212/KAAL/actions/workflows/ci.yml)
+[![CI — lint, typecheck, tests, dashboard](https://github.com/aryank2212/KAAL_v2/actions/workflows/ci.yml/badge.svg)](https://github.com/aryank2212/KAAL_v2/actions/workflows/ci.yml)
 
 ---
 
 ## 🛑 The Problem
 
-Current unmanned aerial vehicle (UAV) and drone systems face two major, critically fatal vulnerabilities in field deployments:
+Unmanned aerial systems face two cheap, mission-ending attacks:
 
-### 1. The Visual Deception Vulnerability (Adversarial Attacks)
-Machine vision systems, including state-of-the-art military object detection models, are highly susceptible to adversarial patch attacks. A simple printed sticker placed on a target (like a tank or an enemy asset) can completely fool the drone's advanced camera capabilities. The drone camera sees the compromised target, processes it, and falsely identifies it (e.g., misclassifying a tank as a harmless vehicle or a civilian object). Lab testing on military-grade targets has proven that a cost-effective printed patch or geometric sticker can defeat million-dollar guidance systems.
-
-### 2. The Centralized Signal Vulnerability (GPS Jamming)
-Swarm operations heavily depend on GPS and centralized command hubs. During warfare or high-risk active missions, enemies deploy generic signal jammers—often costing as little as $200. The second the GPS and radio links are severed, the entire drone swarm goes blind, loses formation, and fails the mission, often crashing.
+1. **Visual deception (adversarial patches).** A printed sticker on a target can make a state-of-the-art detector misclassify or miss it entirely.
+2. **Signal denial (GPS / link jamming).** A low-cost jammer cuts a swarm off from GPS and its command hub, and the formation falls apart.
 
 *Both attacks cost the enemy pennies. Both wipe out multimillion-dollar missions.*
 
----
+## 💡 The Idea
 
-## 💡 The Idea to Solve
+Drones that **don't trust a single view blindly** and **don't depend on a central command**:
 
-We need a system where **drones don't rely on central commands and don't trust their own singular vision blindly**. 
-
-Our idea is to implement a dual-layer strategy:
-1. **The Anti-Deception Eye (Adversarial Defense)**: Equip each drone with a "second brain" that acts as an anomaly detector. It will identify if the visual input has been tampered with or contains unnatural adversarial noise that is invisible to bare human eyes.
-2. **GPS-Free Swarm Brain (MARL)**: Enable the drones to coordinate locally like a flock of birds (murmurations), completely independent of GPS or central communication servers. If 30% of the swarm is taken out, the rest naturally reorganizes and completes the mission.
+1. **Anti-Deception Eye** — every frame goes through a detector *and* independent, model-free tamper checks. Tampered inputs are flagged instead of silently trusted.
+2. **GPS-Free Swarm Brain** — drones coordinate from local observations only (separation, alignment, cohesion), so the swarm reorganises when members are lost.
 
 ---
 
-## 🛠️ Tech Stack
+## 📍 Status — what is implemented today
 
-### Core AI & Computer Vision
-- **YOLOv8 (Ultralytics)**: Core object detection model for identifying targets (e.g., tanks, aircraft, military vehicles)
-- **PyTorch**: Deep learning framework for training and fine-tuning YOLO and running MARL pipelines
-- **OpenCV**: Computer vision library for handling video frames, FFT conversion, and image manipulation
-- **FFT Analysis**: Frequency domain transformation for detecting the unnatural statistical signatures of adversarial patches
-
-### Swarm Intelligence & Simulation
-- **MAPPO (Multi-Agent Proximal Policy Optimization)**: Reinforcement learning architecture for decentralized execution and centralized training of drone agents
-- **PyBullet / Gazebo**: Realistic 3D physics simulators for replicating swarm aerodynamics and sensor inputs (IMU, distance, Lidar)
-
-### Dashboard & Control Center
-- **React.js & Vite**: Lightning-fast, modern frontend framework for building the real-time visualization dashboard
-- **Python Backend**: Fast API / Flask handlers to orchestrate local hardware communication and feed YOLO inferences to the dashboard
-
-### Hardware Specs (Physical Prototyping)
-- Raspberry Pi Zero 2W (On-board inference)
-- Standard F450 Quadcopter Frames
-- Pixhawk Flight Controllers (Matek F405)
-- Basic onboard camera & IMU modules
+| Component | State |
+|---|---|
+| Detector (Stream 1) — **RF-DETR** (production, chosen on measured results) or YOLO (optional), one interface | ✅ `MODEL/detectors.py` |
+| FFT patch detector (Stream 2), per-object scoring, calibration | ✅ `MODEL/fft_scorer.py`, `MODEL/calibration.py` |
+| Temporal-consistency cue (Stream 3) for low-frequency attacks, fused live | ✅ `MODEL/temporal_scorer.py` |
+| Cleaned multi-source dataset (6 sources, cross-source de-duplication) + training + head-to-head evaluation | ✅ `MODEL/build_dataset.py`, `train_detector.py`, `compare_detectors.py` |
+| Independent ground-vehicle test set + dataset registry | ✅ `MODEL/build_ground_test.py`, `MODEL/datasets_registry.yaml` |
+| FastAPI backend (WebSocket stream, live settings, health, metrics) | ✅ `Frontend_Backend/backend/server.py` |
+| React tactical dashboard | ✅ `Frontend_Backend/dashboard-app/` |
+| Swarm flocking | ⚙️ Hand-coded boid rules (dashboard canvas + `SCRIPTS/kaal_swarm.py`) |
+| MAPPO swarm policy, PyBullet/Gazebo sim, thermal/IR fallback | 🗺️ Planned — see `roadmap.md` (Phase 6) |
 
 ---
 
-## 🚀 Our Solution: KAAL Architecture
+## 🚀 Layer 1 — The Anti-Deception Eye
 
-The system is defined by its two primary operational layers:
+```
+Camera frame
+  ├─► Stream 1  Detector (RF-DETR / YOLO) ──► boxes, classes, confidences
+  ├─► Stream 2  FFT high-frequency power ratio, whole frame + per detected box
+  └─► Stream 3  Temporal residual vs. a learned background (video only)
+                         │
+                 Fusion: flag the frame / each box if any stream exceeds its
+                 calibrated threshold → dashboard alert, "predictions unreliable"
+```
 
-### Layer 1: The Anti-Deception Eye (Adversarial Robustness)
-Every drone runs two parallel vision systems on each camera frame it captures:
+* **Stream 2 (FFT).** The score is the share of spectral *power* above `0.5·(1−high_freq_ratio)` cycles/pixel, computed on a mean-removed, Hann-windowed crop. Natural images follow a 1/f² law; printed noise/pattern patches inject high-frequency power. The band is defined in cycles/pixel, so tall, wide and square boxes are scored on equal terms. (The original scorer used `log1p` magnitudes and an index-space radius; it tracked box *shape* rather than content and was near chance on real photos — AUROC 0.59 vs 0.89 now. See `MODEL/RESULTS.md`.)
+* **Stream 3 (temporal).** An EMA background model on a 32×32 grid; each cell's residual (after removing the global brightness shift) is compared with a warm-up-calibrated threshold. A frame is flagged when a cell stays hot for several consecutive frames — a patch fixed on a target does, a vehicle driving through does not. Hot cells are not folded into the background, cells hot for too long are absorbed (a parked vehicle), and a whole-view change re-baselines. It catches the smooth, low-frequency perturbations the FFT cannot see, and small printed patches the frame-level FFT dilutes. It assumes a static or slowly moving camera.
+* **What the defense does:** it *flags*. It does not repair detections, so mAP under attack is unchanged; the defense metric is the flag rate vs. false-flag rate.
 
-* **Stream 1 - Normal Vision**: The image is passed through the standard YOLOv8 model ("I see a tank at position X").
-* **Stream 2 - Frequency Analysis**: The exact same image frame is converted to the frequency domain using Fast Fourier Transform (FFT). While adversarial patches look normal in RGB space, they cast massive, unnatural frequency signatures in FFT space. 
+### Detector: RF-DETR instead of YOLO
 
-**The Fusion Layer:**
-* If both streams agree that the target is natural, the detection is trusted.
-* If the FFT stream detects anomalies (meaning the object has adversarial noise), the system flags an **Adversarial Attack** and gracefully switches to alternative detection methods (thermal/IR sensors) while ignoring the tampered visual inference.
+[RF-DETR](https://github.com/roboflow/rf-detr) (Roboflow, ICLR 2026) is a real-time detection transformer on a DINOv2 backbone: NMS-free, Apache-2.0 (Ultralytics YOLO is AGPL-3.0), and the leader on the RF100-VL domain-transfer benchmark — which is what matters when fine-tuning on a small, specialised dataset like ours. Trained on identical data on the same GPU (`MODEL/RESULTS.md` §6):
 
-### Layer 2: GPS-Free Swarm Brain
-Each drone in the system is defined as an independent autonomous agent using MAPPO. A drone operates strictly on localized knowledge:
-* Its own speed and direction via IMU.
-* Sightline within 50 meters (Camera + Lidar).
-* Distance and bearing of its closest 5 neighboring drones.
+| | RF-DETR-Small | YOLO26s |
+|---|---|---|
+| kaal_v3 test mAP50:95, clean / patched | **0.552 / 0.516** | 0.517 / 0.472 |
+| Unseen ground-vehicle photos (798), any-class mAP50 | **0.722** | 0.015 |
+| Latency (RTX 4060, FP32, batch 1) | 17.1 ms | 7.5 ms |
 
-The drones follow **3 Fundamental Rules**:
-1. **Wait and Avoid (Separation):** Prevent collision by maintaining a minimum safe distance from neighbors.
-2. **Align (Alignment):** Match the average heading or spatial direction of neighboring drones.
-3. **Move Together (Cohesion):** Steer towards the average physical position of the local flock.
+RF-DETR is therefore the production detector (`Docs/DECISIONS.md`, ADR-001); YOLO stays available (`KAAL_DETECTOR=yolo`) for speed-critical edge targets.
 
-Because of this, if a jammer disconnects them from the base, the swarm logic takes over. No single point of failure exists; the swarm self-heals and continues tracking the target.
+### Production model — `rfdetr-small-v4`
+
+RF-DETR-Small fine-tuned on `kaal_v4` (warm start from v3, 10 epochs, 2.43 h on an RTX 4060 Laptop). Full card: [`Docs/MODEL_CARD.md`](Docs/MODEL_CARD.md); numbers: `MODEL/RESULTS.md` §7.
+
+| | v3 (kaal_v3) | **v4 (kaal_v4)** |
+|---|---|---|
+| kaal_v4 test mAP50:95, clean / patched | 0.313 / 0.291 | **0.405 / 0.379** |
+| Unseen ground vehicles (798 photos), any-class mAP50 | 0.720 | **0.915** |
+| soldier / artillery / tank (kaal_v4 test, mAP50:95) | 0.00 / 0.07 / 0.53 | **0.30 / 0.26 / 0.66** |
+| ONNX export parity (ΔmAP50:95, 200 val images) | — | +0.005 (gate ≤ 0.01) |
+
+The backend loads it automatically (registry `status: production`); `python -m MODEL.export_model` produces the ONNX version for torch-free deployment.
+
+## 🛰️ Layer 2 — GPS-Free Swarm Brain
+
+Each drone acts on local knowledge only — its own velocity, objects within sight, and the bearing/distance of its nearest neighbours — following three rules: **separation**, **alignment**, **cohesion**. Today this runs as hand-coded boids in the dashboard simulation; a learned MAPPO policy is the Phase 6 roadmap item.
 
 ---
 
-## 🌍 Real World Impact
+## 🗂️ Dataset (`kaal_v4`)
 
-* **Defense & Military**: Securing drone swarms over contested borders where GPS jamming is an active, daily threat. Ensuring automated targeting failsafes.
-* **Civilian Disaster Response**: Swarms dynamically sweeping through earthquake rubble without needing satellite connectivity beneath concrete.
-* **Smart Cities & Agriculture**: Remote crop monitoring and urban grid monitoring without relying on massive bandwidth or permanent internet infrastructure.
+`python -m MODEL.build_dataset` merges six sources into one YOLO-format dataset with a coarse 9-class taxonomy that both RF-DETR and YOLO train on (full lineage, licences and data findings: [`Docs/DATASETS.md`](Docs/DATASETS.md); machine-readable registry: `MODEL/datasets_registry.yaml`):
+
+`aircraft · helicopter · tank · armored_vehicle · artillery · engineering_vehicle · soldier · vehicle · person`
+
+| Source | Content | Notes / license |
+|---|---|---|
+| Original KAAL set (`MODEL/runs/adversarial/augmented_dataset`) | aircraft types, tanks, APC/IFV, artillery, soldiers, aerial cars | Legacy class 0 (“A10”) mixed cars and generic aircraft — those images are **dropped**. Augmented copies of one photo never straddle splits. |
+| [VisDrone2019-DET](https://github.com/VisDrone/VisDrone-Dataset) | drone-view people & vehicles | People map to `person`, **never** `soldier`. Academic use. |
+| [Military Aircraft Detection](https://huggingface.co/datasets/a2015003713/military-aircraft-detection-dataset) | 114 aircraft types (rarity-weighted subset) | Rotorcraft → `helicopter`. No license declared upstream. |
+| [Simuletic UAV battle tank](https://huggingface.co/datasets/Simuletic/UAV-Aerial-View-Battle-Tank-Detection-Dataset) | synthetic drone-view tanks | CC BY-NC 4.0 per HF metadata. |
+| [DVIDS military (llama-farm)](https://huggingface.co/datasets/llama-farm/military-labeled-yolo) | soldiers, tanks, APCs, artillery, MLRS, trucks, aircraft | U.S. public-domain imagery, CC0 labels (VLM-assisted, human-corrected). |
+| [Open Images V7](https://storage.googleapis.com/openimages/web/index.html) — Tank class | real-world tank photos | annotations CC BY 4.0, images CC BY 2.0. Photos with people are excluded. |
+
+Near-duplicate photos are grouped **across all sources** before splitting (the legacy and aircraft sources share images), and an independent test-only set (`python -m MODEL.build_ground_test`: Orion web images, Russian-military-annotated, TNO Search_2 — 798 photos) measures generalisation to imagery no model has seen.
+
+```bash
+python -m MODEL.fetch_datasets uav_tank
+python -m MODEL.fetch_datasets aircraft --train 3500 --val 400 --test 400
+python -m MODEL.fetch_datasets dvids
+python -m MODEL.fetch_datasets openimages_tank
+gh release download v0.0.0 --repo ultralytics/assets \
+    --pattern 'VisDrone2019-DET-*.zip' --dir MODEL/Datasets/visdrone   # then unzip
+python -m MODEL.build_dataset            # -> MODEL/Datasets/kaal_v4 (+ manifest.json)
+```
+
+## 🏋️ Training & evaluation
+
+```bash
+# production recipe: continue the RF-DETR checkpoint on kaal_v4
+python -m MODEL.train_detector --arch rfdetr-small --data MODEL/Datasets/kaal_v4 \
+    --init-weights MODEL/runs/train/rfdetr-small/checkpoint_best_total.pth \
+    --epochs 10 --lr 5e-5 --name rfdetr-small-v4
+# from scratch (COCO weights) / YOLO baseline
+python -m MODEL.train_detector --arch rfdetr-small --epochs 12
+python -m MODEL.train_detector --arch yolo26s --epochs 30
+# head-to-head report (add --dedup-against, --eval-classes, --agnostic as needed)
+python -m MODEL.compare_detectors \
+    --detector rfdetr-s=MODEL/runs/train/rfdetr-small/checkpoint_best_total.pth \
+    --detector yolo26s=MODEL/runs/train/yolo26s/weights/best.pt     # -> MODEL/runs/compare/report.md
+```
+
+---
+
+## 📚 Documentation
+
+| Document | Contents |
+|---|---|
+| [`Docs/WALKTHROUGH.md`](Docs/WALKTHROUGH.md) | deep structural walkthrough: architecture, live pipeline frame by frame, every subsystem, runbook |
+| [`Docs/FILE_REFERENCE.md`](Docs/FILE_REFERENCE.md) | every file, its status (core / tool / research / legacy) and purpose |
+| [`Docs/DATASETS.md`](Docs/DATASETS.md) | dataset lineage, class mappings, licences, data problems found, how to add a dataset |
+| [`Docs/MODEL_CARD.md`](Docs/MODEL_CARD.md) | production detector: data, metrics, limits, intended use |
+| [`Docs/DECISIONS.md`](Docs/DECISIONS.md) | architecture decision records (RF-DETR, FFT scorer, temporal cue, data policy, security) |
+| [`Docs/FUTURE_SCALING.md`](Docs/FUTURE_SCALING.md) | scaling to new models, tasks and hardware tiers with concrete tech stacks |
+| [`MODEL/RESULTS.md`](MODEL/RESULTS.md) | every measured result |
+
+---
+
+## 🛠️ Installation
+
+```bash
+git clone https://github.com/aryank2212/KAAL_v2.git && cd KAAL_v2
+python -m venv venv && source venv/bin/activate     # Windows: venv\Scripts\activate
+
+pip install -e ".[ml,server]"     # detectors + training + backend
+# pip install -e ".[server]"      # model-free defense + backend only (demo mode, no detector)
+```
+
+### Export for deployment
+
+```bash
+pip install -e ".[export]"
+python -m MODEL.export_model --parity 200        # production RF-DETR -> ONNX, fails if mAP moves > 0.01
+python -m MODEL.export_model --format tensorrt   # also openvino, coreml, tflite, ... (RF-DETR exporter)
+pip install -e ".[onnx,server]"                  # edge box: ONNX Runtime, no torch
+KAAL_MODEL_PATH=MODEL/runs/export/<run>/<run>.onnx python Frontend_Backend/backend/server.py
+```
+
+### Backend
+
+```bash
+python Frontend_Backend/backend/server.py
+```
+
+Serves `http://127.0.0.1:3000`: `/api/health`, `/api/python-data`, `/api/settings` (GET/PUT), `/api/video_feed` (MJPEG) and the `/ws` WebSocket stream.
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `KAAL_MODEL_PATH` | production RF-DETR from `MODEL/datasets_registry.yaml` if on disk, else `MODEL/yolov8m.pt` | `.pth`/`.ckpt` → RF-DETR, `.onnx` → ONNX Runtime (no torch), `.pt` → YOLO |
+| `KAAL_DETECTOR` | `auto` | force `rfdetr`, `onnx` or `yolo` (auto = from the weights suffix) |
+| `KAAL_HOST` | `127.0.0.1` | bind address (local only by default) |
+| `KAAL_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | allowed dashboard origins (HTTP + WebSocket) |
+| `KAAL_API_TOKEN` | — | require `X-KAAL-Token` on `PUT /api/settings` (set `VITE_KAAL_API_TOKEN` for the dashboard) |
+| `KAAL_FFT_THRESHOLD` / `KAAL_CALIBRATION` | `0.08` / — | FFT threshold or a calibration profile JSON |
+| `KAAL_TEMPORAL`, `KAAL_TEMPORAL_THRESHOLD`, `KAAL_TEMPORAL_WARMUP` | `1`, auto, `30` | temporal cue on/off, fixed threshold, warm-up frames |
+| `KAAL_CAMERA_INDEX`, `KAAL_ENABLE_CAMERA`, `KAAL_CONF` | `0`, `1`, `0.4` | camera + detector confidence |
+| `KAAL_CAMERA_SOURCE` | — | video file or stream URL instead of a webcam (files loop) |
+
+If the ML stack or weights are missing, the server starts in **demo mode** (no detector; FFT, temporal cue, metrics and streams still run).
+
+**Attack demo without a webcam:** render a clean → patched → clean clip from any labelled drone frame and play it through the full pipeline:
+
+```bash
+python -m MODEL.make_demo_video --image MODEL/Datasets/kaal_v4/test/images/<frame>.jpg --out demo.mp4
+KAAL_CAMERA_SOURCE=demo.mp4 python Frontend_Backend/backend/server.py   # production weights from the registry
+```
+
+### Dashboard
+
+```bash
+cd Frontend_Backend/dashboard-app
+npm ci
+npm run dev        # http://localhost:5173 (proxies /api and /ws to :3000)
+```
+
 ---
 
 ## 🧪 Testing & CI
 
-The repo runs three automated checks on every push (GitHub Actions, see `.github/workflows/ci.yml`):
+GitHub Actions (`.github/workflows/ci.yml`) on every push and PR:
 
-1. **Lint** — `ruff check MODEL tests`
-2. **Type check** — `mypy MODEL tests`
-3. **Unit + integration tests** — `pytest tests/` (74 passed; 1 GPU-marked test auto-skipped without torch)
+1. **Lint** — `ruff check` + `ruff format --check` on `MODEL`, `tests`, `Frontend_Backend/backend`
+2. **Type check** — `mypy` (MODEL, tests, backend)
+3. **Tests** — `pytest -m "not gpu"` on Python 3.11 and 3.12, including the server integration tests
+4. **Dashboard** — `npm ci`, `eslint`, `vite build`
 
-The integration suite exercises the full defense path: `DualStreamDefense.predict()` on clean vs patched images (asserts detection rate > 80% with a calibration-derived threshold) and the FastAPI server JSON schema.
+The GPU end-to-end suite (`integration.yml`) is manual (`workflow_dispatch`) and needs a self-hosted CUDA runner.
 
 ```bash
-pip install -r requirements.txt ruff mypy pytest
-ruff check MODEL tests
-mypy MODEL tests
-pytest tests/            # skip GPU tests via -m "not gpu"
+pip install -e ".[dev,server]"
+ruff check MODEL tests Frontend_Backend/backend && mypy && pytest
 ```
 
 ---
 
-## 🛠️ Installation & Setup Guide
+## 📁 Project structure
 
-### 1. Clone the Repository
-```bash
-git clone https://github.com/aryank2212/KAAL.git
-cd KAAL
 ```
-
-### 2. Backend Setup (Python API & YOLO Inference)
-The backend uses FastAPI and runs the YOLOv8 model for inference.
-```bash
-# Create a virtual environment (optional but recommended)
-python -m venv venv
-
-# Activate the virtual environment
-# Windows:
-venv\Scripts\activate
-# macOS/Linux:
-source venv/bin/activate
-
-# Install the required dependencies
-pip install -r MODEL/requirements.txt
-pip install -r requirements-server.txt  # FastAPI + uvicorn + psutil + websockets
-
-# Run the backend server (config via KAAL_* env vars; e.g. KAAL_CAMERA_INDEX, KAAL_FFT_THRESHOLD)
-python Frontend_Backend/backend/server.py
+KAAL/
+├── MODEL/
+│   ├── detectors.py            # YOLO + RF-DETR behind one interface
+│   ├── fft_scorer.py           # Stream 2: FFT power-ratio scorer
+│   ├── temporal_scorer.py      # Stream 3: temporal cue (+ streaming wrapper)
+│   ├── dual_stream_defense.py  # fusion of all streams
+│   ├── calibration.py          # per-camera threshold profiles
+│   ├── fetch_datasets.py / build_dataset.py
+│   ├── train_detector.py / compare_detectors.py
+│   ├── adversarial_patch.py, augmentations.py, benchmark.py, failure_analysis.py, ablation.py
+│   └── RESULTS.md              # measured results
+├── Frontend_Backend/
+│   ├── backend/server.py       # FastAPI + WebSocket
+│   └── dashboard-app/          # React + Vite dashboard
+├── SCRIPTS/                    # AirSim drone control & swarm demos
+├── tests/                      # unit + integration tests
+└── roadmap.md, progress.md
 ```
-*The backend server will start on `http://localhost:3000` with `/api/health`, `/api/python-data`, `/api/settings`, and a WebSocket stream at `/ws`.*
-
-### 3. Frontend Setup (React Dashboard)
-The frontend dashboard visualizes the swarm status and adversarial alerts. Open a **new terminal window** and run:
-```bash
-cd Frontend_Backend/dashboard-app
-
-# Install Node.js dependencies
-npm install
-
-# Start the Vite development server
-npm run dev
-```
-*The frontend will typically run on `http://localhost:5173`. Open this URL in your browser to view the KAAL Control Dashboard!*
 
 ---
 *“KAAL is a swarm intelligence system where the drones share the instincts of a flock of birds and the paranoia of a soldier — they need no signal to coordinate, and they trust nothing their cameras show them.”*

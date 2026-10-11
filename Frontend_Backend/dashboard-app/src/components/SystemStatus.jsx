@@ -1,30 +1,25 @@
+// SystemStatus (exported as HealthMonitor) — health bars for CPU, GPU,
+// memory, latency and bandwidth from the backend's 1 Hz MetricsSampler.
 import { motion } from "motion/react";
-import { useState, useEffect } from "react";
 
-export default function HealthMonitor({ systemMetrics, isRunning }) {
-  const [stars, setStars] = useState([]);
+// Decorative star field, generated once at module load (not during render).
+const STARS = Array.from({ length: 12 }, (_, id) => ({
+  id,
+  top: Math.random() * 100,
+  left: Math.random() * 100,
+  size: Math.random() * 2 + 0.5,
+  delay: Math.random() * 3,
+  duration: 1.5 + Math.random() * 2,
+}));
 
-  // Generate random star positions once
-  useEffect(() => {
-    const s = [];
-    for (let i = 0; i < 12; i++) {
-      s.push({
-        id: i,
-        top: Math.random() * 100,
-        left: Math.random() * 100,
-        size: Math.random() * 2 + 0.5,
-        delay: Math.random() * 3,
-        duration: 1.5 + Math.random() * 2,
-      });
-    }
-    setStars(s);
-  }, []);
+export default function HealthMonitor({ systemMetrics }) {
+  const stars = STARS;
 
   const gauges = [
     { label: "CPU", value: Math.round(systemMetrics.cpu), max: 100, unit: "%", color: "#dc2626" },
     { label: "MEM", value: Math.round(systemMetrics.memory), max: 100, unit: "%", color: "#ef4444" },
     { label: "GPU", value: Math.round(systemMetrics.gpu), max: 100, unit: "%", color: "#34d399" },
-    { label: "NET", value: Math.round(systemMetrics.bandwidth), max: 100, unit: "%", color: "#8b5cf6" },
+    { label: "NET", value: Math.round(systemMetrics.bandwidth), max: 1024, unit: "KB/s", color: "#8b5cf6" },
     { label: "LAT", value: Math.round(systemMetrics.latency), max: 200, unit: "ms", color: "#22d3ee" },
   ];
 

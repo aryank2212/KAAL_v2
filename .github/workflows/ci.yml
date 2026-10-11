@@ -1,4 +1,4 @@
-name: CI — lint, typecheck, unit tests
+name: CI — lint, typecheck, tests, dashboard
 
 on:
   push:
@@ -13,12 +13,12 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: "3.12"
       - run: pip install ruff
       - name: Ruff check
-        run: ruff check MODEL tests
+        run: ruff check MODEL tests Frontend_Backend/backend
       - name: Ruff format check
-        run: ruff format --check MODEL tests
+        run: ruff format --check MODEL tests Frontend_Backend/backend
 
   typecheck:
     name: Typecheck (mypy)
@@ -27,28 +27,51 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
-      - run: pip install mypy numpy
+          python-version: "3.12"
+      - run: pip install mypy numpy fastapi pydantic
       - name: Mypy
-        run: mypy MODEL tests
+        run: mypy
 
   unit-tests:
-    name: Unit tests (pytest)
+    name: Tests (pytest, py${{ matrix.python }})
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ["3.11", "3.12"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
-          python-version: "3.11"
+          python-version: ${{ matrix.python }}
           cache: pip
-      - name: Install package + dev deps
+      # Model-free stack + server extras; torch/ultralytics/rfdetr are stubbed
+      # or faked in these tests, so the heavy `ml` extra is not installed.
+      - name: Install package + dev/server deps
         run: |
-          pip install -e ".[dev]"
-          pip install opencv-python-headless
+          pip install -e ".[dev,server]"
+          pip uninstall -y opencv-python && pip install opencv-python-headless
       - name: Run tests (CPU)
         run: pytest -m "not gpu" --cov=MODEL --cov-report=term-missing
       - name: Upload coverage artifact
+        if: matrix.python == '3.12'
         uses: actions/upload-artifact@v4
         with:
           name: coverage
           path: .coverage
+
+  dashboard:
+    name: Dashboard (eslint + vite build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Frontend_Backend/dashboard-app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: Frontend_Backend/dashboard-app/package-lock.json
+      - run: npm ci
+      - run: npm run lint
+      - run: npm run build

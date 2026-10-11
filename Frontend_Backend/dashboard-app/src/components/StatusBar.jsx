@@ -1,3 +1,6 @@
+// StatusBar — live readouts: flagged boxes, frame FFT score vs threshold,
+// temporal cue (OFF / CALIB / residual), DETECTOR backend, connection state
+// and CPU / GPU / memory / latency / uptime from systemMetrics.
 import { motion } from "motion/react";
 
 export default function StatusBar({
@@ -6,15 +9,20 @@ export default function StatusBar({
   swarmData = {},
   connected = false,
   attack = false,
-  fftThreshold = 0.5,
+  fftThreshold = null,
   flaggedCount = 0,
+  temporal = null,
+  detector = null,
 }) {
   const noise = swarmData.noise_score || 0;
-  const noiseHot = noise > fftThreshold;
+  const noiseHot = fftThreshold !== null && noise > fftThreshold;
+  const temporalValue = !temporal ? "OFF" : temporal.ready ? temporal.score.toFixed(4) : "CALIB";
   const metrics = [
     { label: "FLAGS", value: flaggedCount, color: flaggedCount > 0 ? "#f43f5e" : "#34d399", icon: "⬡" },
     { label: "NOISE", value: typeof noise === "number" ? noise.toFixed(3) : 0, color: noiseHot ? "#f43f5e" : "#fbbf24", icon: "⚡" },
-    { label: "THRESH", value: (fftThreshold || 0.5).toFixed(3), color: "#22d3ee", icon: "⊘" },
+    { label: "THRESH", value: fftThreshold !== null ? fftThreshold.toFixed(3) : "—", color: "#22d3ee", icon: "⊘" },
+    { label: "TEMPORAL", value: temporalValue, color: temporal?.flagged ? "#f43f5e" : "#a78bfa", icon: "◷" },
+    { label: "DETECTOR", value: detector ? (detector.fallback ? "DEMO" : detector.backend.toUpperCase()) : "—", color: detector?.fallback ? "#fbbf24" : "#cbd5e1", icon: "◉" },
     { label: "MODE", value: swarmData.mode || "NORMAL", color: swarmData.mode === "KAAL" ? "#22d3ee" : "#cbd5e1", icon: "⏣" },
     { label: "CPU", value: `${Math.round(systemMetrics.cpu)}%`, color: systemMetrics.cpu > 80 ? "#f43f5e" : "#22d3ee", icon: "⬡" },
     { label: "MEM", value: `${Math.round(systemMetrics.memory)}%`, color: systemMetrics.memory > 85 ? "#f43f5e" : "#3b82f6", icon: "◈" },

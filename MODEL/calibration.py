@@ -9,7 +9,7 @@ Calibration mode:
   4. Store the calibration profile per camera/environment as JSON so it can be
      reused at inference time.
 
-This replaces the hardcoded `fft_threshold: 0.3` with values measured from
+This replaces the hardcoded fallback threshold with values measured from
 real clean imagery for the specific deployment environment.
 """
 
@@ -22,7 +22,7 @@ from dataclasses import dataclass, field, asdict
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from .fft_scorer import compute_fft_anomaly_score
+from .fft_scorer import DEFAULT_FFT_THRESHOLD, compute_fft_anomaly_score, compute_region_scores
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +44,7 @@ class CalibrationProfile:
     environment_id: str
     high_freq_ratio: float = 0.25
     scores: List[float] = field(default_factory=list)
-    threshold: float = 0.3
+    threshold: float = DEFAULT_FFT_THRESHOLD
     method: str = "percentile"
     count: int = 0
     mean: float = 0.0
@@ -63,7 +63,7 @@ class CalibrationProfile:
             environment_id=str(data.get("environment_id", "unknown")),
             high_freq_ratio=float(data.get("high_freq_ratio", 0.25)),
             scores=[float(s) for s in data.get("scores", [])],
-            threshold=float(data.get("threshold", 0.3)),
+            threshold=float(data.get("threshold", DEFAULT_FFT_THRESHOLD)),
             method=str(data.get("method", "percentile")),
             count=int(data.get("count", len(data.get("scores", [])))),
             mean=float(data.get("mean", 0.0)),
@@ -128,6 +128,45 @@ class FFTCalibrator:
         logger.info("Collected %d FFT scores from %s", len(scores), images_dir)
         return scores
 
+    def collect_box_scores(
+        self,
+        images_dir: str,
+        labels_dir: str,
+        n: int = 100,
+        min_size: int = 16,
+    ) -> List[float]:
+        """
+        Score every ground-truth box (YOLO labels) of clean images.
+
+        This matches what the live defense flags — individual detections, not
+        whole frames — so it is the right distribution for the per-region
+        threshold. Boxes smaller than ``min_size`` px are skipped, as at
+        inference time.
+        """
+        img_extensions = {".jpg", ".jpeg", ".png", ".bmp", ".tif", ".tiff"}
+        files = sorted(
+            f for f in os.listdir(images_dir) if Path(f).suffix.lower() in img_extensions
+        )[:n]
+        scores: List[float] = []
+        for fname in files:
+            img = cv2.imread(os.path.join(images_dir, fname))
+            label = Path(labels_dir) / f"{Path(fname).stem}.txt"
+            if img is None or not label.exists():
+                continue
+            h, w = img.shape[:2]
+            boxes = []
+            for line in label.read_text().splitlines():
+                p = line.split()
+                if len(p) >= 5:
+                    cx, cy, bw, bh = (float(v) for v in p[1:5])
+                    boxes.append(
+                        ((cx - bw / 2) * w, (cy - bh / 2) * h, (cx + bw / 2) * w, (cy + bh / 2) * h)
+                    )
+            region = compute_region_scores(img, boxes, self.high_freq_ratio, min_size)
+            scores += [s for s in region if s is not None]
+        logger.info("Collected %d per-box FFT scores from %s", len(scores), images_dir)
+        return scores
+
     # ── Threshold Computation ─────────────────────────────────────────────
 
     @staticmethod
@@ -148,11 +187,11 @@ class FFTCalibrator:
             sigma:      Number of std devs above mean for the "sigma" method.
 
         Returns:
-            Threshold value. Falls back to 0.3 if no scores are available.
+            Threshold value. Falls back to DEFAULT_FFT_THRESHOLD if no scores are available.
         """
         if not scores:
-            logger.warning("No scores to calibrate from; using default 0.3")
-            return 0.3
+            logger.warning("No scores to calibrate from; using default %.4f", DEFAULT_FFT_THRESHOLD)
+            return DEFAULT_FFT_THRESHOLD
 
         arr = np.asarray(scores, dtype=np.float64)
         if method == "sigma":
@@ -279,6 +318,11 @@ def main():
     )
     parser.add_argument("--n", type=int, default=100, help="Number of clean images to score")
     parser.add_argument(
+        "--labels",
+        default=None,
+        help="YOLO labels dir: calibrate on ground-truth boxes (per-region) instead of whole frames",
+    )
+    parser.add_argument(
         "--high-freq-ratio", type=float, default=0.25, help="FFT high-frequency band fraction"
     )
     parser.add_argument(
@@ -305,13 +349,12 @@ def main():
         environment_id=args.environment,
         high_freq_ratio=args.high_freq_ratio,
     )
-    profile = calibrator.calibrate_from_dir(
-        args.images,
-        n=args.n,
-        method=args.method,
-        percentile=args.percentile,
-        sigma=args.sigma,
+    scores = (
+        calibrator.collect_box_scores(args.images, args.labels, n=args.n)
+        if args.labels
+        else calibrator.collect_scores(args.images, n=args.n)
     )
+    profile = calibrator.build_profile(scores, args.method, args.percentile, args.sigma)
     if not profile.scores:
         raise SystemExit("No images scored — calibration failed.")
     calibrator.save_profile(profile, args.output)

@@ -1,3 +1,7 @@
+// Sidebar — navigation, a model list and mini metrics. The model entries
+// (QUANTUM-V1 / HELIX-V2 / ATLAS-V3) are cosmetic labels shown in the main
+// panel header; the real detector is chosen on the backend (KAAL_DETECTOR /
+// KAAL_MODEL_PATH) and shown in the StatusBar DETECTOR item.
 import { motion } from "motion/react";
 
 export default function Sidebar({ selectedModel, setSelectedModel, systemMetrics }) {

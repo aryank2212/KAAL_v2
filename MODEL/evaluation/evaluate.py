@@ -1,3 +1,15 @@
+"""
+evaluate.py — [legacy] Clean / PGD-attacked / defended evaluation of a YOLO model.
+
+Validates the clean model with Ultralytics, builds a PGD-perturbed copy of the
+val split (``attacks/pgd.py``), applies ``defenses/preprocess.py`` and scores
+the confidence-entropy detector (``detection/anomaly.py``). Superseded by
+``MODEL/evaluator.py`` (seeded physical patches) and
+``MODEL/compare_detectors.py``.
+
+    python -m MODEL.evaluation.evaluate --model <weights.pt> --data <data.yaml>
+"""
+
 import os
 import shutil
 import yaml
