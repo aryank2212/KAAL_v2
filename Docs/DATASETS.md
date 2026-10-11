@@ -193,9 +193,10 @@ but a photo can appear twice *within* one split via two sources or two
 legacy frames: 14 of 1,428 test images (1.0%) and 16 of 1,331 val images
 (1.2%) are near-duplicates of another image in the same split (dHash ≤ 20).
 All models are scored on the same images, so comparisons stay fair; those
-photos simply weigh twice. The next dataset version should keep one image
-per near-duplicate group in val/test across sources (as `legacy_samples`
-already does within the legacy source).
+photos simply weigh twice. `python -m MODEL.build_dataset --eval-unique`
+keeps one image per near-duplicate group in val/test across sources (as
+`legacy_samples` already does within the legacy source); it is off by default
+only so that `kaal_v4` stays reproducible — use it for the next version.
 
 Every built dataset writes `manifest.json` (arguments, per-split image and
 instance counts, licences, duplicates removed) and a `data.yaml` usable by

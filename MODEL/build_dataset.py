@@ -603,6 +603,23 @@ def resolve_leakage(samples: List[Sample]) -> Tuple[List[Sample], int]:
     return kept, len(samples) - len(kept)
 
 
+def keep_one_per_group_in_eval(samples: List[Sample]) -> Tuple[List[Sample], int]:
+    """Keep the first non-augmented image of each group in val/test (train is untouched).
+
+    Leakage resolution already keeps a group inside one split; this also stops
+    one photo from being scored twice inside a split via two sources.
+    """
+    seen: set = set()
+    kept: List[Sample] = []
+    for s in samples:
+        if s.split == "train":
+            kept.append(s)
+        elif not s.augmented and (s.split, s.group) not in seen:
+            seen.add((s.split, s.group))
+            kept.append(s)
+    return kept, len(samples) - len(kept)
+
+
 def rarity_sample(samples: List[Sample], cap: int, seed: int) -> List[Sample]:
     """Weighted sampling without replacement favouring images with rare classes."""
     if cap < 0 or cap >= len(samples):
@@ -740,6 +757,12 @@ def main() -> None:
         "-1 disables; kaal_v3 was built without it)",
     )
     parser.add_argument(
+        "--eval-unique",
+        action="store_true",
+        help="Keep one image per near-duplicate group in val/test across sources "
+        "(off for kaal_v4 reproducibility; recommended for the next version)",
+    )
+    parser.add_argument(
         "--keep-unlabeled-legacy",
         action="store_true",
         help="Keep legacy images without boxes (kaal_v3 behaviour)",
@@ -795,6 +818,9 @@ def main() -> None:
         # air_* images and the aircraft source share an upstream dataset).
         pool_all = merge_near_duplicate_groups(pool_all, args.cross_dup_dist, args.workers)
     pool_all, leaked_total = resolve_leakage(pool_all)
+    eval_dupes = 0
+    if args.eval_unique:
+        pool_all, eval_dupes = keep_one_per_group_in_eval(pool_all)
     selected: List[Sample] = []
     for name in loaders:
         if name not in caps:
@@ -809,6 +835,7 @@ def main() -> None:
         "args": vars(args),
         "cross_split_duplicates_removed": leaked_total,
         "groups_before_near_duplicate_merge": groups_before,
+        "eval_duplicates_removed": eval_dupes,
         "licenses": {k: v for k, v in LICENSES.items() if k in caps},
         **stats,
     }

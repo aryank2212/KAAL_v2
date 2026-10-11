@@ -305,3 +305,44 @@ def test_v4_cross_source_dedup_can_be_disabled(tmp_path, monkeypatch):
     assert names[f"uav_tank_{uav_stem}.jpg"] == "test"
     assert names[f"dvids_{dvids_stem}.jpg"] == "train"  # the leak kaal_v3 had
     assert manifest["cross_split_duplicates_removed"] == 0
+
+
+def test_eval_unique_keeps_one_image_per_group_in_val_test():
+    from MODEL.build_dataset import keep_one_per_group_in_eval
+
+    samples = [
+        _s("test", "g1"),
+        _s("test", "g1"),  # same photo via a second source
+        _s("val", "g2"),
+        _s("train", "g3"),
+        _s("train", "g3"),  # duplicates in train are left alone
+    ]
+    kept, removed = keep_one_per_group_in_eval(samples)
+    assert removed == 1
+    assert [(s.split, s.group) for s in kept] == [
+        ("test", "g1"),
+        ("val", "g2"),
+        ("train", "g3"),
+        ("train", "g3"),
+    ]
+
+
+def test_v4_eval_unique_flag_drops_within_split_copies(tmp_path, monkeypatch):
+    uav, dvids, uav_stem, dvids_stem = _v4_sources(tmp_path)
+    # put the dvids copy in the same (test) split as the uav copy
+    from MODEL import build_dataset as bd
+
+    test_block = next(
+        k for k in range(500) if bd._stable_split(f"dvids:{k}", (0.8, 0.1, 0.1)) == "test"
+    )
+    old = dvids / "train" / "images" / f"{dvids_stem}.jpg"
+    new_stem = f"dvids_image_{test_block * 20}"
+    old.rename(old.with_name(f"{new_stem}.jpg"))
+    (dvids / "train" / "labels" / f"{dvids_stem}.txt").rename(
+        dvids / "train" / "labels" / f"{new_stem}.txt"
+    )
+
+    names, manifest = _run_build(monkeypatch, tmp_path, uav, dvids, "--eval-unique")
+    shared = [n for n in (f"uav_tank_{uav_stem}.jpg", f"dvids_{new_stem}.jpg") if n in names]
+    assert len(shared) == 1 and names[shared[0]] == "test"
+    assert manifest["eval_duplicates_removed"] == 1

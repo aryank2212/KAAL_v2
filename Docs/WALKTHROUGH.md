@@ -252,7 +252,8 @@ build_ground_test.py ───────▶ kaal_ground_test (798 unseen groun
    `_noisy/_occlude/_patch` names (`legacy_source`), DVIDS upload blocks, and
    — across all sources — near-identical images by a flip-aware 256-bit
    difference hash (`merge_near_duplicate_groups`, ≤ 20 bits).
-3. **Resolve leakage:** each group lives in one split (test > val > train).
+3. **Resolve leakage:** each group lives in one split (test > val > train);
+   with `--eval-unique`, val/test also keep only one image per group.
 4. **Cap** per source and split with rarity-weighted sampling (images with
    rare classes are kept preferentially).
 5. **Write** images (longest side ≤ 1024), YOLO labels, `data.yaml`,
