@@ -1,3 +1,17 @@
+"""
+analyze_dataset.py — [legacy] Flag tiny / fragmented boxes in a YOLO dataset.
+
+Counts boxes whose area is below ``--threshold`` of the image (default 0.03)
+— used on the original aircraft set to find wings or edges annotated as
+separate objects. KAAL datasets are now built and checked by
+``MODEL/build_dataset.py`` (minimum box size, manifest counts).
+
+    python -m MODEL.analyze_dataset --data <yolo dataset dir> --threshold 0.03
+
+Status: legacy (see Docs/FILE_REFERENCE.md); default path is the old
+``Datasets/aircraft.v1i.yolov8`` export.
+"""
+
 import os
 import glob
 import logging

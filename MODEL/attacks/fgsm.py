@@ -1,3 +1,13 @@
+"""
+fgsm.py — [legacy] Fast Gradient Sign Method against YOLOv8.
+
+One signed-gradient step of size ``epsilon`` on a proxy loss
+(``pgd.compute_proxy_loss``: "suppress" hides objects, "hallucinate" creates
+false positives). Works on the raw ``torch`` model (``yolo.model``) with
+images as (B, 3, H, W) tensors in [0, 1]. Not used by the live system; the
+KAAL evaluations use physical-style patches from ``adversarial_patch.py``.
+"""
+
 import torch
 from .pgd import compute_proxy_loss
 

@@ -1,3 +1,11 @@
+"""
+compare.py — [legacy] Save YOLO predictions on the clean, adversarial and
+defended copies of a validation set (produced by ``evaluation/evaluate.py``)
+for side-by-side figures.
+
+    python -m MODEL.visualization.compare --model <weights.pt> --data <data.yaml>
+"""
+
 import os
 import shutil
 import yaml

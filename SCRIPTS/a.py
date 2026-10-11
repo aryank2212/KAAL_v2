@@ -1,3 +1,9 @@
+"""
+a.py — [legacy] Near-identical copy of kaal_fft_radar.py (log message differs).
+
+Kept only for history; use kaal_fft_radar.py.
+"""
+
 import cv2
 import numpy as np
 import time

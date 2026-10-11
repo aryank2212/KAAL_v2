@@ -1,3 +1,15 @@
+"""
+evaluate_custom_report.py — [legacy] Evaluate a YOLO model against a COCO json.
+
+Runs YOLO (conf 0.45, IoU 0.40, class-agnostic NMS) over a folder, matches
+predictions to the COCO ground truth by IoU and prints / saves summary counts.
+It produced ``MODEL/custom_evaluation_report.txt`` (military-artillery-and-tanks
+set). Superseded by ``MODEL/compare_detectors.py`` (pycocotools mAP, attacked
+pass, any backend).
+
+    python -m MODEL.evaluate_custom_report --model best.pt --source <images> --json <coco.json>
+"""
+
 import json
 import cv2
 import logging

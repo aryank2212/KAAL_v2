@@ -1,3 +1,11 @@
+"""
+simulated_eye.py — [research] AirSim drone camera with keyboard flight + YOLO + FFT.
+
+Flies an AirSim multirotor with the keyboard (pynput), runs YOLO on the
+camera feed and an FFT patch check on each box. Needs a running AirSim
+environment (``requirements-sim.txt``).
+"""
+
 import os
 import cv2
 import logging

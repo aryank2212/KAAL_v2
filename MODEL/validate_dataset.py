@@ -1,3 +1,13 @@
+"""
+validate_dataset.py — [legacy] Sanity-check a YOLO dataset described by data.yaml.
+
+For each split: unreadable images, missing and empty label files, malformed
+lines and coordinates outside [0, 1]; logs per-split counts and the class
+distribution (class ids are counted, not range-checked).
+
+    python -m MODEL.validate_dataset --data <data.yaml>
+"""
+
 import yaml
 import cv2
 import logging

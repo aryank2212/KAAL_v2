@@ -1,3 +1,9 @@
+"""
+user_test.py — [legacy] One-off YOLO inference on a single image.
+
+Hard-coded Windows paths (``D:\\...``); edit before running.
+"""
+
 import cv2
 import logging
 from ultralytics import YOLO
