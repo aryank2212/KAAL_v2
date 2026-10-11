@@ -1,6 +1,6 @@
 # KAAL — Future Scaling Guide
 
-How KAAL grows from today's system (RF-DETR-Small + FFT + temporal cue,
+How KAAL grows from today's system (RF-DETR-Small v4 + FFT + temporal cue,
 FastAPI backend, React dashboard, one RTX 4060) to newer models, new tasks
 and any hardware tier — with the concrete technology for each step.
 
@@ -41,9 +41,9 @@ These are design constraints, not afterthoughts:
 | Step | Command | Expected effect | Cost vs Small |
 |---|---|---|---|
 | RF-DETR-Medium (576 px) | `--arch rfdetr-medium` | ~+2 COCO AP over Small; better small objects | estimate ~1.5× train and latency |
-| Higher input | `--imgsz 640` / `768` (must be a multiple of 32 = patch 16 × 2 windows) | VisDrone people/vehicles (today 0.07 / 0.35 mAP50:95) | ∝ pixels |
+| Higher input | `--imgsz 640` / `768` (must be a multiple of 32 = patch 16 × 2 windows) | VisDrone people/vehicles (v4: person 0.09, vehicle 0.37 mAP50:95) | ∝ pixels |
 | RF-DETR-Large (704 px) | add `"rfdetr-large": "large"` to `RFDETR_ARCHS` in `train_detector.py` (`detectors.py` already maps it) | best accuracy of the family | estimate ~2–3× train time; plan for a ≥ 16 GB card |
-| Longer schedule | `--epochs 24` on kaal_v4 | convergence on new sources | linear |
+| Longer schedule | `--epochs 20+` on kaal_v4, warm start from v4 | v4's val curve was still rising at epoch 10 (0.459 → 0.462) | linear |
 
 ### 1.2 Small and distant objects
 

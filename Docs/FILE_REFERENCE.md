@@ -109,7 +109,7 @@ Every tracked file, what it does, and its status. Companion to
 
 | File | Status | Purpose |
 |---|---|---|
-| `MODEL/RESULTS.md` | doc | Measured results: §0 FFT scorer fix, §1–4 Phase 3 benchmark/failure analysis, §6 detector comparison and ground-vehicle test. |
+| `MODEL/RESULTS.md` | doc | Measured results: §0 FFT scorer fix, §1–4 Phase 3 benchmark/failure analysis, §6 RF-DETR vs YOLO and the ground-vehicle test, §7 the production model (`rfdetr-small-v4`) and its deployment checks. |
 | `MODEL/README.md` | doc | MODEL package usage. |
 | `MODEL/requirements.txt` | config | Core ML dependencies for `MODEL/`. |
 | `MODEL/datasets_registry.yaml` | doc/data | Machine-readable dataset registry (status, licence, use per model). Validated by `tests/test_datasets_registry.py`. |

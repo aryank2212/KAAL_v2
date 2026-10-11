@@ -206,9 +206,12 @@ both RF-DETR (`dataset_file="yolo"`) and Ultralytics.
 
 | Model | Trained on | Status |
 |---|---|---|
-| `rfdetr-small-v3` | kaal_v3 | see registry `models:` |
+| `rfdetr-small-v4` | kaal_v4 (warm start from v3) | **production** |
+| `rfdetr-small-v3` | kaal_v3 | superseded |
 | `yolo26s-v3` | kaal_v3 | baseline (optional backend) |
-| `rfdetr-small-v4` | kaal_v4 (warm start from v3) | see registry `models:` |
+
+No model has been trained on `kaal_ground_test` (Orion / Russian-military /
+Search_2) — it stays an unseen test.
 
 ## 6. Licences and commercial use
 

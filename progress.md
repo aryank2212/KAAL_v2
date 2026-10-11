@@ -23,7 +23,8 @@
 - [x] New sources: DVIDS military photos (`llama-farm/military-labeled-yolo`, public domain / CC0 — soldiers, tanks, APCs, artillery, MLRS) and Open Images V7 tank photos (CC BY; photos with people or group-of boxes excluded); all 6,471 VisDrone train images.
 - [x] `MODEL/datasets_registry.yaml` — every dataset's licence, status and use per model, validated by a test; finished/redundant data moved to the trash (experimental `kaal_v3_1`, extracted archives, Open Images CSV, resume checkpoints).
 - [x] `train_detector --init-weights` (warm start), `compare_detectors --dedup-against / --eval-classes / --agnostic`, ignore regions, per-source tables.
-- [ ] RF-DETR-Small v4 fine-tune on kaal_v4 and evaluation (results → `MODEL/RESULTS.md` §7, `Docs/MODEL_CARD.md`).
+- [x] RF-DETR-Small v4 fine-tune on kaal_v4 (warm start, 10 epochs, 2.43 h) — **production**: kaal_v4 test mAP50:95 0.313 → **0.405**, unseen ground vehicles any-class mAP50 0.720 → **0.915**, soldier 0.00 → 0.30, artillery 0.07 → 0.26 (`MODEL/RESULTS.md` §7, `Docs/MODEL_CARD.md`).
+- [x] Deployment: ONNX export with parity gate (v4 Δ +0.005 mAP50:95 on 200 val images), ONNX Runtime backend verified live without torch; attack demo with v4 flags the patch 4 frames after onset with no false alarms.
 
 **Documentation (`Docs/`)** — WALKTHROUGH, FILE_REFERENCE, DATASETS, DECISIONS, MODEL_CARD, FUTURE_SCALING.
 

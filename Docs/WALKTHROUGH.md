@@ -328,7 +328,8 @@ sweeps), `evaluator.py` (clean/attacked/defended passes).
 | `4f37ef7` | CI matrix + dashboard job, `ml` extra, merged README. |
 | `bb31d83` | Independent ground-vehicle test set, ignore regions, duplicate-aware splits. |
 | `82e2c11` | RF-DETR chosen as production (RESULTS §6); `kaal_v4` pipeline (DVIDS, Open Images tanks), dataset registry. |
-| next | Production RF-DETR fine-tuned on `kaal_v4`; documentation set (`Docs/`). |
+| `f219d28` … `765e486` | Documentation set (`Docs/`), registry-driven production weights, ONNX export + backend, every module labelled, tests for the new data paths. |
+| final | `rfdetr-small-v4` trained on `kaal_v4` and promoted to production (`MODEL/RESULTS.md` §7). |
 
 Measured outcomes are in `MODEL/RESULTS.md` (§0 scorer, §6 comparison, §7
 kaal_v4 model).
@@ -379,10 +380,12 @@ KAAL_CAMERA_SOURCE=demo.mp4 python Frontend_Backend/backend/server.py
 
 ## 16. Known limitations (honest list)
 
-* Ground-vehicle **sub-classes** (tank vs APC vs artillery vs engineering)
-  are the weakest part of the model; finding the vehicle is much better than
-  naming it (RESULTS §6.2, §7).
-* Tiny objects from drone altitude (VisDrone people) remain hard at 512 px.
+* Ground-vehicle **sub-classes** are the weakest part of the model: v4 finds
+  unseen ground vehicles well (any-class mAP50 0.915) but APC/IFV (0.05 on
+  kaal_v4 test), artillery and engineering vehicles on unseen photos stay weak
+  (RESULTS §7.3).
+* Tiny objects from drone altitude (VisDrone person 0.09 mAP50:95) remain hard
+  at 512 px.
 * The temporal cue assumes a static camera; per-box FFT is weak on tiny boxes.
 * Several sources are non-commercial or of unknown licence (DATASETS §6).
 * The swarm layer is hand-coded boids; MAPPO, simulation and thermal are

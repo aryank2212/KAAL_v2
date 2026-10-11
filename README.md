@@ -67,6 +67,19 @@ Camera frame
 
 RF-DETR is therefore the production detector (`Docs/DECISIONS.md`, ADR-001); YOLO stays available (`KAAL_DETECTOR=yolo`) for speed-critical edge targets.
 
+### Production model — `rfdetr-small-v4`
+
+RF-DETR-Small fine-tuned on `kaal_v4` (warm start from v3, 10 epochs, 2.43 h on an RTX 4060 Laptop). Full card: [`Docs/MODEL_CARD.md`](Docs/MODEL_CARD.md); numbers: `MODEL/RESULTS.md` §7.
+
+| | v3 (kaal_v3) | **v4 (kaal_v4)** |
+|---|---|---|
+| kaal_v4 test mAP50:95, clean / patched | 0.313 / 0.291 | **0.405 / 0.379** |
+| Unseen ground vehicles (798 photos), any-class mAP50 | 0.720 | **0.915** |
+| soldier / artillery / tank (kaal_v4 test, mAP50:95) | 0.00 / 0.07 / 0.53 | **0.30 / 0.26 / 0.66** |
+| ONNX export parity (ΔmAP50:95, 200 val images) | — | +0.005 (gate ≤ 0.01) |
+
+The backend loads it automatically (registry `status: production`); `python -m MODEL.export_model` produces the ONNX version for torch-free deployment.
+
 ## 🛰️ Layer 2 — GPS-Free Swarm Brain
 
 Each drone acts on local knowledge only — its own velocity, objects within sight, and the bearing/distance of its nearest neighbours — following three rules: **separation**, **alignment**, **cohesion**. Today this runs as hand-coded boids in the dashboard simulation; a learned MAPPO policy is the Phase 6 roadmap item.

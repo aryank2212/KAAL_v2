@@ -8,7 +8,8 @@ Artifacts: `runs/failure_analysis/`, `runs/benchmark/`.
 > `log1p`-magnitude FFT scorer, which was later found to track crop *shape*
 > rather than content (§0). They are kept for the record; §0 and §6 supersede
 > them. Re-run with the commands in §5. §6 holds the RF-DETR vs YOLO
-> comparison and the decision to make RF-DETR the production detector.
+> comparison and the decision to make RF-DETR the production detector; §7
+> the production model (RF-DETR-Small v4 on kaal_v4).
 
 ## 0. FFT scorer fix — shape bias removed (2026-10-11)
 
@@ -259,6 +260,106 @@ optional backend (`KAAL_DETECTOR=yolo`) for speed-critical edge targets.
 * 254 `mil_*` originals carry no labels (unannotated strike footage) and were
   training as "background" in `kaal_v3`.
 
+## 7. Production model — RF-DETR-Small v4 on `kaal_v4` (2026-10-11)
+
+### 7.1 Training
+
+Warm start from `rfdetr-small-v3` (`train_detector --init-weights`), same
+9-class head, `kaal_v4` train (16,683 images: legacy 5,000, VisDrone 6,471,
+military aircraft 3,263, DVIDS 963, Open Images tanks 853, UAV tanks 133),
+10 epochs, lr 5e-5, batch 4 × grad-accum 4, EMA, RTX 4060 Laptop, 2.43 h.
+
+| Epoch | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 | 9 | 10 |
+|---|---|---|---|---|---|---|---|---|---|---|
+| val mAP50:95 (kaal_v4 val) | 0.425 | 0.433 | 0.441 | 0.446 | 0.448 | 0.449 | 0.445 | 0.459 | 0.459 | **0.462** |
+
+Still rising at the last epoch — a longer schedule is the cheapest next gain.
+(kaal_v4 val is harder than kaal_v3 val — it adds DVIDS soldiers/artillery,
+real-world tanks and all of VisDrone — so 0.462 is not comparable with v3's
+0.604 on kaal_v3 val; §7.2 compares both models on the same images.)
+
+### 7.2 `kaal_v4` test split (1,428 images)
+
+| Model | mAP50 | mAP50:95 | mAP50:95 attacked | Drop | Latency |
+|---|---|---|---|---|---|
+| rfdetr-small-v3 | 0.418 | 0.313 | 0.291 | −0.022 | 17.0 ms |
+| **rfdetr-small-v4** | **0.565** | **0.405** | **0.379** | −0.026 | 16.9 ms |
+
+| Class (mAP50:95) | v3 | v4 |
+|---|---|---|
+| aircraft | 0.808 | 0.813 |
+| helicopter | 0.678 | 0.682 |
+| tank | 0.529 | **0.664** |
+| armored_vehicle | 0.000 | 0.052 |
+| artillery | 0.074 | **0.264** |
+| soldier | 0.001 | **0.301** |
+| vehicle | 0.352 | 0.373 |
+| person | 0.066 | 0.085 |
+
+| Source (clean → attacked) | v3 | v4 |
+|---|---|---|
+| DVIDS | 0.102 → 0.079 | **0.238 → 0.251** |
+| Open Images tanks | 0.315 → 0.285 | **0.451 → 0.435** |
+| legacy KAAL | 0.717 → 0.684 | 0.726 → 0.682 |
+| military aircraft | 0.790 → 0.738 | 0.772 → 0.724 |
+| UAV tanks (synthetic) | 0.808 → 0.753 | 0.774 → 0.737 |
+| VisDrone | 0.206 → 0.198 | 0.226 → 0.218 |
+
+Caveat: 68 of these 1,428 test images (4.8%; 34 aircraft, 34 legacy)
+near-duplicate kaal_v3 training images that v3 saw and v4 did not (kaal_v4
+removed them from train) — this favours v3, so v4's margin is conservative.
+
+### 7.3 Independent ground-vehicle test (`kaal_ground_test`, 798 unseen photos)
+
+Rebuilt against kaal_v4 train (1 near-duplicate excluded). Scored classes:
+tank, armored_vehicle, artillery, engineering_vehicle.
+
+| Model | mAP50 | mAP50:95 | attacked | Any-class mAP50 | Any-class mAP50:95 |
+|---|---|---|---|---|---|
+| rfdetr-small-v3 | 0.131 | 0.090 | 0.075 | 0.720 | 0.530 |
+| **rfdetr-small-v4** | **0.172** | **0.119** | **0.121** | **0.915** | **0.672** |
+
+| Class (mAP50:95) | v3 | v4 |
+|---|---|---|
+| armored_vehicle | 0.038 | **0.210** |
+| tank | **0.290** | 0.237 |
+| artillery | 0.030 | 0.029 |
+| engineering_vehicle | 0.002 | 0.001 |
+
+v4 reaches 0.915 any-class AP50 on unseen ground vehicles (v3 0.720) and
+separates APC/IFVs from tanks far better; the price is some tanks now labelled
+armored_vehicle (tank AP 0.29 → 0.24). Artillery and engineering vehicles
+on unseen photos remain unsolved — the training data has few distinct scenes
+of them (DATASETS §3.1, §3.5).
+
+### 7.4 Deployment checks
+
+| Check | Result |
+|---|---|
+| ONNX export parity, v4, 200 kaal_v4 val images | PyTorch 0.4920 vs ONNX 0.4968 mAP50:95 (Δ +0.0048 ≤ 0.01 gate) |
+| ONNX parity, v3, 60 kaal_v3 val images (CPU) | 0.6187 vs 0.6191 (Δ +0.0004); CPU latency PyTorch 963 ms vs ONNX Runtime 267 ms |
+| Live backend with the ONNX model, no torch installed (CPU) | `/api/health` backend `onnx`; 7/7 tanks detected; attack flagged in exactly the patched segment on both loops of the clip; ~300 ms/frame |
+| End-to-end defense with v4 (`DualStreamDefense`, 220-frame clip, patch on one of 7 tanks) | 0/50 clean frames flagged, 76/80 patched frames flagged (temporal cue) 4 frames after onset, 0/60 after removal; 7 tanks detected throughout |
+| FFT defense on kaal_v4 test (model-free) | 27.8% of patched boxes flagged at 5.2% clean false flags (threshold 0.08; AUROC 0.741) |
+
+Artefacts: `MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth`
+(SHA-256 `d38e4896…9c13d39`), `MODEL/runs/export/rfdetr-small-v4/rfdetr-small-v4.onnx`
+(+ `.onnx.json`, SHA-256 `f0c6fe9a…c288e58`); reports `runs/compare_v4`,
+`runs/compare_ground_v4`.
+
+### 7.5 Decision and next steps
+
+**v4 is the production model** (registry `status: production`; the backend
+loads it by default): +0.092 mAP50:95 on kaal_v4 test and +0.195 any-class
+mAP50 on unseen ground vehicles, the same attack drop, the same latency.
+Regressions to watch: tank on unseen photos (0.29 → 0.24), military-aircraft
+source (0.790 → 0.772), synthetic UAV tanks (0.808 → 0.774).
+
+Next, in order of expected gain per GPU-hour: (1) longer schedule (the
+curve is still rising); (2) RF-DETR-Medium / 640 px for VisDrone-scale
+objects; (3) more distinct artillery / engineering-vehicle / APC scenes and a
+relabel pass on DVIDS; (4) TensorRT FP16 engine (`--format tensorrt`).
+
 ## 5. Reproduce
 
 ```bash
@@ -282,6 +383,18 @@ python -m MODEL.build_ground_test        # needs the Orion release assets, see i
 python -m MODEL.compare_detectors ... --data MODEL/Datasets/kaal_ground_test \
     --eval-classes tank,armored_vehicle,artillery,engineering_vehicle --agnostic \
     --out MODEL/runs/compare_ground
+
+# production model (§7)
+python -m MODEL.build_dataset                                   # kaal_v4
+python -m MODEL.build_ground_test --train-ref MODEL/Datasets/kaal_v4/train/images
+python -m MODEL.train_detector --arch rfdetr-small --data MODEL/Datasets/kaal_v4 \
+    --init-weights MODEL/runs/train/rfdetr-small/checkpoint_best_total.pth \
+    --epochs 10 --lr 5e-5 --name rfdetr-small-v4
+python -m MODEL.compare_detectors --data MODEL/Datasets/kaal_v4 \
+    --detector rfdetr-small-v3=MODEL/runs/train/rfdetr-small/checkpoint_best_total.pth \
+    --detector rfdetr-small-v4=MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth \
+    --out MODEL/runs/compare_v4
+python -m MODEL.export_model --parity 200
 
 # mAP matrix requires torch/ultralytics (GPU-gated); weights in MODEL/*.pt
 python -m MODEL.benchmark --images <images> --labels <labels> \

@@ -266,8 +266,10 @@ models:
     arch: rfdetr-small
     trained_on: kaal_v3
     weights: MODEL/runs/train/rfdetr-small/checkpoint_best_total.pth
-    status: production
-    notes: 12 epochs, 1.99 h, best val mAP50:95 0.604 (RF-DETR evaluator)
+    status: superseded
+    notes: >-
+      12 epochs, 1.99 h, best val mAP50:95 0.604 on kaal_v3 val (RF-DETR evaluator).
+      kaal_v4 test 0.313 mAP50:95; ground test any-class mAP50 0.720. Superseded by v4.
 
   - id: yolo26s-v3
     arch: yolo26s
@@ -280,5 +282,12 @@ models:
     arch: rfdetr-small
     trained_on: kaal_v4
     weights: MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth
-    status: pending
-    notes: warm start from rfdetr-small-v3
+    onnx: MODEL/runs/export/rfdetr-small-v4/rfdetr-small-v4.onnx
+    sha256: d38e4896dbcf80809d9f635f754d2be5dfa5bb7fd267281caad0a82af9c13d39
+    onnx_sha256: f0c6fe9aab09af6240ffc9766e188b19acb64ef970570b52a67a67b24c288e58
+    status: production
+    notes: >-
+      Warm start from rfdetr-small-v3; 10 epochs, lr 5e-5, batch 4 x grad-accum 4, 2.43 h (RTX 4060).
+      Best val mAP50:95 0.462 on kaal_v4 val (last epoch, still rising). kaal_v4 test 0.405 mAP50:95
+      (v3 0.313); ground test any-class mAP50 0.915 (v3 0.720). ONNX parity +0.0048 mAP50:95 on
+      200 val images. MODEL/RESULTS.md section 7.

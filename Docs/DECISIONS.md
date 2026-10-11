@@ -147,3 +147,9 @@ training warm-starts RF-DETR-Small from the kaal_v3 checkpoint
 reused — rather than starting from COCO. A larger model (RF-DETR-Medium,
 higher resolution for small objects) is the next step when more GPU time is
 available (FUTURE_SCALING §1).
+
+**Outcome (2026-10-11):** `rfdetr-small-v4` trained in 2.43 h; kaal_v4 test
+mAP50:95 0.313 → 0.405, unseen ground-vehicle any-class mAP50 0.720 → 0.915,
+same latency and attack drop — promoted to production (`MODEL/RESULTS.md` §7).
+The validation curve was still rising at epoch 10, so the warm-start recipe
+has headroom.
