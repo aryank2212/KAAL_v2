@@ -36,6 +36,7 @@ how to recreate it.
 | Russian-military-annotated | test only | on disk | CC BY 4.0 | | | `kaal_ground_test` |
 | TNO Search_2 | test only | on disk | CC BY 4.0 | | | `kaal_ground_test` |
 | `kaal_v3_1` (experimental re-split) | built | **trashed** | — | | | |
+| `kaal_v3` (built dataset) | built | **trashed** after use (rebuildable, see §4) | — | | | |
 
 Rejected candidates (registry `role: candidate`): AMOD-V1.0 (647 GB),
 DRC CARLA camouflage (174 GB, civilian cars), MVRSD (Baidu-only),

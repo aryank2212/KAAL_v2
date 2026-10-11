@@ -226,13 +226,18 @@ sources:
 built:
   - id: kaal_v3
     local_path: MODEL/Datasets/kaal_v3
-    builder: python -m MODEL.build_dataset (git 6581dc5; see module docstring for flags)
-    status: on_disk
+    builder: >-
+      python -m MODEL.build_dataset --out MODEL/Datasets/kaal_v3 --caps <V3_CAPS>
+      --cross-dup-dist -1 --keep-unlabeled-legacy (originally git 6581dc5)
+    status: trashed
     sources: [legacy, visdrone, military_aircraft, uav_tank]
     size: 11,633 train / 1,215 val / 1,216 test images, 9 classes
     known_issues:
       - val/test contain no armored_vehicle/artillery/engineering_vehicle/soldier
       - 68 of 1,216 test images have a near-duplicate in train (report both raw and de-duplicated scores)
+    notes: >-
+      Use completed 2026-10-11 (models trained, results in MODEL/RESULTS.md section 6, v3 superseded);
+      moved to the trash. Rebuild with the builder command above to re-run section 6.
 
   - id: kaal_v3_1
     local_path: MODEL/Datasets/kaal_v3_1
