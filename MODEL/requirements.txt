@@ -1,6 +1,8 @@
-# YOLOv8 Adversarial Robustness Pipeline — Dependencies
+# KAAL ML stack — detectors (YOLO + RF-DETR), training and evaluation.
+# Equivalent to: pip install -e ".[ml]"
 
-ultralytics>=8.0.0
+ultralytics>=8.3.0
+rfdetr[train]>=1.11
 torch>=2.0.0
 torchvision>=0.15.0
 opencv-python>=4.8.0
@@ -8,3 +10,6 @@ numpy>=1.24.0
 PyYAML>=6.0
 matplotlib>=3.7.0
 tqdm>=4.65.0
+pycocotools>=2.0.7
+supervision>=0.25
+huggingface_hub>=0.30

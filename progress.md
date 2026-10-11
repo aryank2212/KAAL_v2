@@ -4,7 +4,28 @@
 
 ---
 
-## Status: ✅ COMPLETE (Phase 0) + ✅ COMPLETE (Phase 1) + ✅ COMPLETE (Phase 2) + ✅ COMPLETE (Phase 3) + ✅ COMPLETE (Phase 4)
+## Status: ✅ COMPLETE (Phase 0–4) + ✅ Phase 4.5 (review fixes, RF-DETR, kaal_v3 dataset)
+
+### Phase 4.5 — Review fixes, RF-DETR detector, cleaned dataset (2026-10-11)
+
+**Bugs fixed (from the repo review)**
+- [x] **Live dashboard froze after the first message** — `CameraWorker._emit` scheduled an `async def` via `call_soon_threadsafe` (coroutine never awaited, queue never filled). Now enqueues directly with drop-oldest; regression test added.
+- [x] **FFT score tracked box shape, not content** — rewritten as a Hann-windowed power ratio in cycles/pixel. Real-photo AUROC 0.59 → 0.89 (noise patch), 0.53 → 0.85 (pattern). One shared `DEFAULT_FFT_THRESHOLD`. See `MODEL/RESULTS.md` §0.
+- [x] **Fresh clone could not build the dashboard** — unanchored `lib/` in `.gitignore` hid `dashboard-app/src/lib/`.
+- [x] **Confidence slider was a no-op** — live `conf` now reaches the detector every frame.
+- [x] **Unauthenticated control plane** — default bind 127.0.0.1, CORS + WebSocket origin allow-list, optional `KAAL_API_TOKEN`, Pydantic validation (NaN/inf → 422).
+- [x] **Metrics** — nvidia-smi throttled to 1 Hz (was spawned every frame), real latency, bandwidth over real elapsed time and labelled KB/s; dashboard `alive`/`kia` no longer overwritten by the flag count; fake random "CPU LOAD" replaced.
+- [x] **Evaluator** — attacked and defended passes now use identical (seeded) patches; the misleading "mAP recovery" claim removed (the defense flags, it does not correct).
+- [x] **CI** — server tests actually run (server extra installed), torch no longer installed for CPU tests (`ml` extra), Python 3.11 + 3.12 matrix, backend linted + type-checked, new dashboard job (eslint + vite build), GPU workflow manual-only.
+- [x] Dashboard ESLint 16 errors → 0; unused npm deps removed (axios, clsx, tailwind-merge); duplicate `SCRIPTS/b.py` and empty `ui/dottedglowback` removed; READMEs merged.
+
+**New**
+- [x] `MODEL/detectors.py` — YOLO + **RF-DETR** (ICLR 2026, Apache-2.0) behind one interface; used by the defense, server (`KAAL_DETECTOR`, `KAAL_MODEL_PATH`) and benchmarks.
+- [x] Temporal-cue fusion — `StreamingTemporalCue`: per-cell residuals with illumination normalization, warm-up calibration, persistence (moving objects ignored), masked background updates, local absorb / global re-baseline. Wired into `DualStreamDefense.predict()` and the live server; shown on the dashboard. Verified live: a printed-noise patch on a tank (≈0.5% of the frame) → cell residual 0.284 vs threshold 0.01; the frame-mean version had missed it (0.00097 vs 0.00121).
+- [x] Live demo without a webcam — `KAAL_CAMERA_SOURCE` (looping video file / stream URL) + `python -m MODEL.make_demo_video` (clean → patch → clean clip). Server now keeps the aspect ratio (was a fixed 640×480 squash); dashboard WebSocket auto-reconnects with backoff (was stuck on polling after a backend restart).
+- [x] `MODEL/fetch_datasets.py`, `MODEL/build_dataset.py` — `kaal_v3`: legacy set (corrupt class 0 dropped, split-leakage removed) + VisDrone2019-DET + military-aircraft subset + Simuletic UAV tanks, 9-class taxonomy, `manifest.json` with counts and licenses.
+- [x] `MODEL/train_detector.py`, `MODEL/compare_detectors.py` — matched RF-DETR vs YOLO26 training and a clean + under-attack COCO mAP / latency / FFT-flag comparison.
+- [x] Tests: 116 → 160 passing.
 
 ### Phase 4 — Backend & Dashboard
 
@@ -138,7 +159,6 @@
 
 ### Queued
 - **Phase 3 mAP matrix (GPU-gated):** re-run the attack x defense matrix with a real YOLO detector (`MODEL/*.pt`) to fill the roadmap mAP comparison table; requires torch/ultralytics
-- **Fusion deployment:** wire the temporal cue into `DualStreamDefense.predict()` alongside the FFT region scoring
 - **Phase 5 (roadmap):** Deployment & Hardening — Dockerize, JSON structured logging, `/metrics`, ONNX export, security hardening
 
 ---
