@@ -197,7 +197,7 @@ first clean frame. Assumption: static or slowly moving camera.
 
 | Endpoint | Purpose |
 |---|---|
-| `GET /api/health` | liveness, mode (live / demo), camera, detector (`backend`, `weights`, `fallback`), temporal status |
+| `GET /api/health` | `status: ok`, `mode` (latest snapshot status: `INITIALIZING` → `NOMINAL` / `ENGAGING`), `is_attack`, `camera` (connected?), `model_loaded`, `detector` (`backend`, `weights`, `fallback` = demo mode), `fft_threshold`, `temporal` (`enabled`, `ready`, `threshold`, `rebaselines`) |
 | `GET /api/python-data` | latest snapshot (polling fallback) |
 | `GET /api/settings` / `PUT /api/settings` | live FFT threshold and detector confidence; PUT requires `X-KAAL-Token` when `KAAL_API_TOKEN` is set |
 | `GET /api/video_feed` | MJPEG of the annotated frame |
@@ -388,11 +388,30 @@ KAAL_CAMERA_SOURCE=demo.mp4 python Frontend_Backend/backend/server.py
 * The swarm layer is hand-coded boids; MAPPO, simulation and thermal are
   roadmap items (`roadmap.md`, `FUTURE_SCALING.md`).
 * The snapshot `status` field still uses the legacy strings `ENGAGING` /
-  `NOMINAL` (detections or alert present / absent); it carries no action.
+  `NOMINAL` (detections or alert present / absent; `INITIALIZING` before the
+  first frame); it carries no action.
 
 ---
 
-## 17. Glossary
+## 17. Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| `/api/health` → `detector.fallback: true`, no boxes on the feed | demo mode: weights missing or ML stack not installed | `pip install -e ".[ml,server]"` (or `.[onnx,server]` for an `.onnx` model); check `KAAL_MODEL_PATH`, or that the registry's production weights exist under `MODEL/runs/train/…` |
+| `camera: false` | webcam index wrong / busy, or file path wrong | set `KAAL_CAMERA_INDEX` or `KAAL_CAMERA_SOURCE=<file|url>`; the worker retries with backoff |
+| Dashboard shows data but no live updates | WebSocket blocked (origin / proxy) — it falls back to 1 s polling | open the dashboard from an origin in `KAAL_CORS_ORIGINS`; check the Vite proxy for `/ws` |
+| `PUT /api/settings` → 401 | `KAAL_API_TOKEN` set on the server | set `VITE_KAAL_API_TOKEN` for the dashboard (or send `X-KAAL-Token`) |
+| `PUT /api/settings` → 422 | NaN / ∞ or a non-number in the body | send finite numbers; finite values are clamped (threshold to 0–1, confidence to 0.05–0.95), not rejected |
+| Temporal shows `CALIB` | first `KAAL_TEMPORAL_WARMUP` (30) frames calibrate the threshold | wait ~1–2 s; keep the camera still during warm-up |
+| Temporal fires constantly on a moving camera | the cue assumes a static view | `KAAL_TEMPORAL=0` for moving platforms until ego-motion compensation lands (FUTURE_SCALING §2) |
+| Too many per-box FFT flags on foliage / gravel | threshold not calibrated for this camera | `python -m MODEL.calibration --labels …` → `KAAL_CALIBRATION=<profile.json>` |
+| RF-DETR training OOM on 8 GB | batch too large | `--batch 2 --grad-accum 8` (same effective batch) |
+| `export_model --parity` exits 1 | exported graph disagrees with PyTorch by > 0.01 mAP50:95 | do not deploy that file; re-export (opset / precision) and re-run parity |
+| A `docs/` folder appears next to `Docs/` | `core.ignorecase=true` on a case-sensitive disk | keep all documentation in `Docs/` |
+
+---
+
+## 18. Glossary
 
 | Term | Meaning in KAAL |
 |---|---|
