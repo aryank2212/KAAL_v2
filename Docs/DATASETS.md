@@ -150,6 +150,36 @@ Totals: tank 263, armored_vehicle 428, engineering_vehicle 64,
 artillery 19, ignore regions 199. Near-duplicates of the training set are
 excluded (`--train-ref`; rebuild against every new training set).
 
+### 3.8 How the kaal_v4 additions were chosen (2026-10-11)
+
+**Goal:** the classes the model could not tell apart or had never been tested
+on — tank, APC/IFV, artillery, engineering vehicle, soldier — from sources
+that are (1) downloadable without an account, (2) licence-clean, (3) box-
+annotated, (4) independent of the legacy set.
+
+**Searched:** Hugging Face Hub (object-detection datasets for military, tank,
+soldier, army, armoured, artillery, camouflage, aerial, UAV, VisDrone, xView,
+DOTA, thermal, …), GitHub repositories (military vehicle / detection /
+dataset, tank detection, MVRSD), Open Images V7 boxable classes, and the
+datasets used by the Orion military-vehicle ATR project.
+
+| Candidate | Decision | Why |
+|---|---|---|
+| llama-farm/military-labeled-yolo (DVIDS) | **train** | 1,185 real photos, public domain + CC0 labels; only clean source of soldier / artillery / MLRS photos |
+| Open Images V7 `Tank` | **train** | ~1,250 human-boxed real tank photos, CC BY, no account (public bucket) |
+| Open Images `Cannon` | not used | a generic cannon class, not specific to modern artillery — would need manual filtering before mapping to `artillery` |
+| VisDrone (remaining 3,471 train images) | **train** | already on disk; more small people / vehicles from drone altitude |
+| Orion web set, Russian-military-annotated, TNO Search_2 | **test only** | independent ground-vehicle evaluation (`kaal_ground_test`); training on them would remove the only unseen test |
+| AMOD-V1.0 (Arma 3 synthetic) | rejected for now | 647 GB, CC BY-NC |
+| DRC CARLA camouflage | rejected | 174 GB, civilian cars |
+| MVRSD | rejected | Baidu Cloud only |
+| leibnitz-lab military_vehicles | rejected | classification only (no boxes) — future fine-grained head |
+| HF shreyas231219/military-artillery-and-tanks | rejected | licence unknown; it is the upstream of the legacy `mil_*` images already in the set |
+| Roboflow Universe / Kaggle "Military Assets" / xView / DOTA | not used | require an account, API key or registration |
+
+Every accepted source was spot-checked visually before training (§3.5,
+§3.6) and registered in `MODEL/datasets_registry.yaml`.
+
 ## 4. Built datasets
 
 | Dataset | Command | Train / val / test | Notes |
