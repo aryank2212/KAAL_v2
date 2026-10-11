@@ -345,7 +345,11 @@ of them (DATASETS §3.1, §3.5).
 Artefacts: `MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth`
 (SHA-256 `d38e4896…9c13d39`), `MODEL/runs/export/rfdetr-small-v4/rfdetr-small-v4.onnx`
 (+ `.onnx.json`, SHA-256 `f0c6fe9a…c288e58`); reports `runs/compare_v4`,
-`runs/compare_ground_v4`.
+`runs/compare_ground_v4`. Release checkpoint (2026-10-12, ADR-008):
+`MODEL/runs/release/rfdetr-small-v4/rfdetr-small-v4.pth` (SHA-256
+`fb2a2f05…cc8f0`): the training checkpoint without optimizer/EMA/loop state or
+local paths, with identical predictions on 100 test images (21,714 detections,
+zero difference) and on CPU. It is the file the registry and the Hub serve.
 
 ### 7.5 Decision and next steps
 

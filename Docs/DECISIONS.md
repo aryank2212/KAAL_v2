@@ -153,3 +153,60 @@ mAP50:95 0.313 → 0.405, unseen ground-vehicle any-class mAP50 0.720 → 0.915,
 same latency and attack drop — promoted to production (`MODEL/RESULTS.md` §7).
 The validation curve was still rising at epoch 10, so the warm-start recipe
 has headroom.
+
+---
+
+## ADR-008 — Weights are distributed through the Hugging Face Hub: private first, gated, CC BY-NC 4.0
+
+**Status:** accepted (2026-10-12).
+
+**Context.** Trained weights (127 MB) are gitignored, so a fresh clone had
+no detector. The options were a GitHub Release asset, Git LFS, or a Hugging
+Face model repo.
+
+**Decision.**
+- **Host: the Hugging Face Hub.** It is built for model weights: model card
+  with metadata, tags per version, gated access and download statistics,
+  and `hf_hub_download` everywhere. A GitHub Release would split the model
+  from its card. Git LFS would charge bandwidth to the repo and put large
+  objects into every LFS-enabled clone.
+- **One repo per model line** (`kaal-rfdetr-small`). Each version is a
+  tag (`v4`, `v5`, …). The registry pins the exact commit (`hub.revision`)
+  and the SHA-256 of every file, so `python -m MODEL.fetch_weights` can
+  only install the bytes that were evaluated.
+- **Release checkpoint, not the training checkpoint.**
+  `python -m MODEL.publish_model strip` keeps only model weights, class
+  names and architecture config. It drops optimizer, EMA, loop and callback
+  state, and rewrites absolute paths (which named the training machine)
+  repo-relative. The result loads with `torch.load(weights_only=True)`, so
+  no pickled code runs. Its predictions are identical to the training
+  checkpoint's: 100 kaal_v4 test images and 21,714 detections, with zero
+  difference in boxes and scores, on GPU and CPU-only.
+- **Licence: CC BY-NC 4.0.** The training data includes non-commercial
+  sources (VisDrone, Simuletic) and sources with unknown licences (legacy
+  `mil_*`, military aircraft). Apache-2.0 would claim rights the data does
+  not grant.
+- **Gated, auto-approved access.** Users sign in and accept four
+  conditions: non-commercial use, no autonomous weapon targeting, no
+  identification or tracking of individuals, and human review of decisions.
+  This is the usual responsible-release practice for a dual-use detector,
+  and approval is automatic.
+- **Private first.** `publish_model upload` creates the repo private and
+  turns gating on before any file is uploaded. The owner reviews the page
+  and then makes it public (or passes `--public`, which flips visibility
+  last).
+
+**Consequences.**
+- **Registry layout.** The registry's `weights` for a released model is
+  the release checkpoint. The training checkpoint is kept as
+  `training_checkpoint` with its hash, for provenance.
+- **ONNX fallback.** `production_weights()` falls back to the ONNX file
+  when only it is present. So `fetch_weights --format onnx` plus the
+  backend works on a box without torch.
+- **Card template.** The Hub model card is rendered from
+  `MODEL/hub/model_card_template.md`, with file names and hashes filled
+  from the registry. Its two code examples were executed against the
+  release files and give the same detections as KAAL's own detectors.
+- **Re-licensing.** Before any commercial use, retrain only on the
+  licence-clean registry sources (DVIDS public domain / CC0, Open Images
+  CC BY) and release that model under a permissive licence.

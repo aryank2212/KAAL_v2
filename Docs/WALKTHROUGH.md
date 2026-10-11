@@ -110,7 +110,8 @@ the end-to-end demo.
 * **`UltralyticsDetector`** — YOLO with class-agnostic NMS at IoU 0.45.
 * **Selection.** `infer_backend()` maps `.pth`/`.ckpt` → RF-DETR, anything
   `.onnx` → ONNX Runtime, anything else → YOLO; `KAAL_DETECTOR` overrides. `production_weights()` returns the
-  weights of the registry model marked `status: production`; the backend
+  weights of the registry model marked `status: production` — its `.pth`
+  release checkpoint if on disk, else its `.onnx` export; the backend
   uses it when `KAAL_MODEL_PATH` is unset, then falls back to the stock
   `MODEL/yolov8m.pt`, then to demo mode (no detector; FFT, temporal, metrics
   and streams still run).
@@ -340,7 +341,13 @@ kaal_v4 model).
 
 ```bash
 # install
-pip install -e ".[ml,server,dev]"
+pip install -e ".[ml,server,dev,hub]"
+
+# production weights on a fresh clone (Hugging Face Hub; accept the terms on the
+# model page once, then log in). Pinned commit + SHA-256 from the registry.
+hf auth login
+python -m MODEL.fetch_weights                  # .pth + .onnx
+python -m MODEL.fetch_weights --format onnx    # ONNX only (no torch)
 
 # data
 python -m MODEL.fetch_datasets uav_tank
@@ -365,6 +372,13 @@ python -m MODEL.compare_detectors --data MODEL/Datasets/kaal_ground_test \
 
 # export for deployment (ONNX + parity check; also --format tensorrt/openvino/...)
 python -m MODEL.export_model --parity 200
+
+# release a new model version on the Hub (ADR-008): strip, record weights/sha256 in the
+# registry, upload (private + gated), then record the printed hub: block
+python -m MODEL.publish_model strip --src MODEL/runs/train/<run>/checkpoint_best_total.pth \
+    --dst MODEL/runs/release/<run>/<run>.pth
+python -m MODEL.publish_model stage           # verify hashes, render the card into MODEL/runs/hub/
+python -m MODEL.publish_model upload          # <hub user>/kaal-rfdetr-small, tag from the model id
 KAAL_MODEL_PATH=MODEL/runs/export/rfdetr-small-v4/rfdetr-small-v4.onnx python Frontend_Backend/backend/server.py
 
 # run (uses the production weights from the registry)
@@ -400,7 +414,7 @@ KAAL_CAMERA_SOURCE=demo.mp4 python Frontend_Backend/backend/server.py
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| `/api/health` → `detector.fallback: true`, no boxes on the feed | demo mode: weights missing or ML stack not installed | `pip install -e ".[ml,server]"` (or `.[onnx,server]` for an `.onnx` model); check `KAAL_MODEL_PATH`, or that the registry's production weights exist under `MODEL/runs/train/…` |
+| `/api/health` → `detector.fallback: true`, no boxes on the feed | demo mode: weights missing or ML stack not installed | `pip install -e ".[ml,server]"` (or `.[onnx,server]` for an `.onnx` model); check `KAAL_MODEL_PATH`, or restore the registry's production weights with `python -m MODEL.fetch_weights` |
 | `camera: false` | webcam index wrong / busy, or file path wrong | set `KAAL_CAMERA_INDEX` or `KAAL_CAMERA_SOURCE=<file|url>`; the worker retries with backoff |
 | Dashboard shows data but no live updates | WebSocket blocked (origin / proxy) — it falls back to 1 s polling | open the dashboard from an origin in `KAAL_CORS_ORIGINS`; check the Vite proxy for `/ws` |
 | `PUT /api/settings` → 401 | `KAAL_API_TOKEN` set on the server | set `VITE_KAAL_API_TOKEN` for the dashboard (or send `X-KAAL-Token`) |
@@ -411,6 +425,9 @@ KAAL_CAMERA_SOURCE=demo.mp4 python Frontend_Backend/backend/server.py
 | RF-DETR training OOM on 8 GB | batch too large | `--batch 2 --grad-accum 8` (same effective batch) |
 | `export_model --parity` exits 1 | exported graph disagrees with PyTorch by > 0.01 mAP50:95 | do not deploy that file; re-export (opset / precision) and re-run parity |
 | A `docs/` folder appears next to `Docs/` | `core.ignorecase=true` on a case-sensitive disk | keep all documentation in `Docs/` |
+| `fetch_weights`: "Access not granted yet" | the Hub repo is gated and this account has not accepted the terms | open the model page, accept the conditions (approval is automatic), `hf auth login`, rerun |
+| `fetch_weights`: "not found, or private to its owner" | the repo is still private, or not logged in | log in with the owner's account, or ask the owner to make it public |
+| `fetch_weights`: "SHA-256 … does not match the registry" | the Hub file is not the one the registry pins (wrong revision, or the file was replaced) | nothing was written; check `hub.revision` and the hashes in `MODEL/datasets_registry.yaml` |
 
 ---
 
@@ -436,7 +453,8 @@ KAAL_CAMERA_SOURCE=demo.mp4 python Frontend_Backend/backend/server.py
 | **dHash** | Difference hash: a 256-bit fingerprint of an image's brightness gradients; near-identical images differ in few bits. KAAL also hashes the mirror image so flipped copies match. |
 | **Leakage** | The same (or near-identical) photo in both train and test, which inflates test scores. |
 | **Rarity sampling** | Keeping images with rare classes preferentially when capping a source (weighted sampling without replacement). |
-| **Registry** | `MODEL/datasets_registry.yaml` — which data exists, its licence, and which model used it; its `status: production` model is what the backend loads. |
+| **Registry** | `MODEL/datasets_registry.yaml` — which data exists, its licence, and which model used it; its `status: production` model is what the backend loads, and a model's `hub:` block says where its weights are published. |
+| **Release checkpoint** | A training checkpoint reduced to what inference needs (weights, class names, architecture config) by `publish_model strip`; identical predictions, no training state or local paths, loads with `weights_only=True`. |
 | **ONNX / ONNX Runtime** | Framework-neutral model file and the runtime that executes it without PyTorch (`.onnx` backend). |
 | **Parity test** | Scoring the exported model and the PyTorch original on the same images; export fails if mAP moves by > 0.01. |
 | **Demo mode** | Backend running without a detector (missing weights/stack): FFT, temporal cue, metrics and streams still work. |

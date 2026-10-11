@@ -30,12 +30,14 @@ ml = [
     "rfdetr[train]>=1.11",
     "pycocotools>=2.0.7",
     "supervision>=0.25",
-    "huggingface_hub>=0.30",
+    "huggingface_hub>=0.34",
 ]
 # Run an exported RF-DETR (python -m MODEL.export_model) without torch.
 onnx = ["onnxruntime>=1.17"]
 # Export the production RF-DETR to ONNX / TensorRT / OpenVINO / CoreML ...
 export = ["rfdetr[onnx]>=1.11", "onnxruntime>=1.17"]
+# Fetch / publish model weights on the Hugging Face Hub (MODEL.fetch_weights, MODEL.publish_model).
+hub = ["huggingface_hub>=0.34"]
 sim = ["airsim>=1.8.1", "pynput>=1.7.6"]
 server = ["fastapi>=0.104.0", "uvicorn>=0.24.0", "psutil>=5.9.0", "websockets>=12.0"]
 dev = [
@@ -45,6 +47,7 @@ dev = [
     "mypy>=1.10",
     "httpx>=0.27",
     "pycocotools>=2.0.7",
+    "huggingface_hub>=0.34",
 ]
 
 [project.scripts]
@@ -55,6 +58,8 @@ kaal-compare = "MODEL.compare_detectors:main"
 kaal-fetch = "MODEL.fetch_datasets:main"
 kaal-build-ground-test = "MODEL.build_ground_test:main"
 kaal-export = "MODEL.export_model:main"
+kaal-fetch-weights = "MODEL.fetch_weights:main"
+kaal-publish = "MODEL.publish_model:main"
 
 [tool.setuptools]
 packages = [
@@ -68,8 +73,8 @@ packages = [
 ]
 
 [tool.setuptools.package-data]
-# production_weights() reads the registry at runtime
-MODEL = ["datasets_registry.yaml"]
+# production_weights() reads the registry at runtime; publish_model renders the Hub card
+MODEL = ["datasets_registry.yaml", "hub/*.md"]
 
 [tool.ruff]
 line-length = 100

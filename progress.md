@@ -4,7 +4,24 @@
 
 ---
 
-## Status: ✅ COMPLETE (Phase 0–4) + ✅ Phase 4.5 (review fixes, RF-DETR, kaal_v3 dataset) + ✅ Phase 4.6 (model decision, data audit, kaal_v4, docs)
+## Status: ✅ COMPLETE (Phase 0–4) + ✅ Phase 4.5 (review fixes, RF-DETR, kaal_v3 dataset) + ✅ Phase 4.6 (model decision, data audit, kaal_v4, docs) + ✅ Phase 4.7 (model release on the Hugging Face Hub)
+
+### Phase 4.7 — Model release on the Hugging Face Hub (2026-10-12)
+
+- [x] **`MODEL/publish_model.py`** (`kaal-publish`):
+  - `strip` writes an inference-only release checkpoint. Training state and machine paths are removed, and it loads with `torch.load(weights_only=True)`.
+  - `stage` checks every file against the registry SHA-256 and renders the Hub card.
+  - `upload` creates the repo (private), turns on gating, commits, and tags.
+- [x] **`MODEL/fetch_weights.py`** (`kaal-fetch-weights`): restores a published model into the registry paths. It downloads at the pinned Hub commit and checks each SHA-256 before moving a file into place. `--format onnx` is for boxes without torch.
+- [x] `rfdetr-small-v4` release checkpoint (`MODEL/runs/release/rfdetr-small-v4/rfdetr-small-v4.pth`, SHA-256 `fb2a2f05…cc8f0`):
+  - Predictions are identical to the training checkpoint: 100 test images, 21,714 detections, zero difference, on GPU and CPU.
+  - No local paths remain in the `.pth`, the `.onnx` or the sidecar.
+- [x] **Registry:** production `weights` now point to the release checkpoint, the training checkpoint is kept as provenance, and a `hub:` block (repo, tag, commit) is validated by a test.
+- [x] **ONNX fallback:** `production_weights()` uses the ONNX file when it is the only one present.
+- [x] **Hub model card** (`MODEL/hub/model_card_template.md`):
+  - CC BY-NC 4.0, gated access with four conditions, `model-index` metrics.
+  - Its ONNX Runtime and PyTorch quick-start code was executed against the release files and gives the same detections as KAAL's detectors (4 images, up to 93 detections each).
+- [x] **Decision record:** `Docs/DECISIONS.md` ADR-008 (host, licence, gating, private-first).
 
 ### Phase 4.6 — Production model decision, data audit, kaal_v4, documentation (2026-10-11)
 

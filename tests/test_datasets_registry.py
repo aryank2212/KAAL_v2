@@ -6,6 +6,7 @@ model. These checks fail when a dataset builder gains a source that the
 registry does not describe, or when an entry is malformed.
 """
 
+import re
 from pathlib import Path
 
 import yaml
@@ -62,6 +63,20 @@ def test_built_datasets_and_models_reference_known_ids():
         assert model["trained_on"] in built_ids, model["id"]
         assert model["status"] in MODEL_STATUSES, model["id"]
     assert sum(m["status"] == "production" for m in reg["models"]) == 1
+
+
+def test_published_models_pin_an_immutable_hub_revision():
+    reg = _load()
+    for model in reg["models"]:
+        hub = model.get("hub")
+        if not hub:
+            continue
+        assert re.fullmatch(r"[\w.-]+/[\w.-]+", hub["repo_id"]), model["id"]
+        assert re.fullmatch(r"[0-9a-f]{40}", hub["revision"]), "pin a commit, not a branch"
+        assert hub["tag"], model["id"]
+        assert re.fullmatch(r"[0-9a-f]{64}", model["sha256"]), model["id"]
+        if model.get("onnx"):
+            assert re.fullmatch(r"[0-9a-f]{64}", model["onnx_sha256"]), model["id"]
 
 
 def test_test_only_sources_never_feed_a_training_set():

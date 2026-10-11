@@ -32,6 +32,7 @@ Drones that **don't trust a single view blindly** and **don't depend on a centra
 | Temporal-consistency cue (Stream 3) for low-frequency attacks, fused live | ✅ `MODEL/temporal_scorer.py` |
 | Cleaned multi-source dataset (6 sources, cross-source de-duplication) + training + head-to-head evaluation | ✅ `MODEL/build_dataset.py`, `train_detector.py`, `compare_detectors.py` |
 | Independent ground-vehicle test set + dataset registry | ✅ `MODEL/build_ground_test.py`, `MODEL/datasets_registry.yaml` |
+| Model release on the Hugging Face Hub (gated, CC BY-NC 4.0) + verified download | ✅ `MODEL/publish_model.py`, `MODEL/fetch_weights.py` |
 | FastAPI backend (WebSocket stream, live settings, health, metrics) | ✅ `Frontend_Backend/backend/server.py` |
 | React tactical dashboard | ✅ `Frontend_Backend/dashboard-app/` |
 | Swarm flocking | ⚙️ Hand-coded boid rules (dashboard canvas + `SCRIPTS/kaal_swarm.py`) |
@@ -79,6 +80,8 @@ RF-DETR-Small fine-tuned on `kaal_v4` (warm start from v3, 10 epochs, 2.43 h on 
 | ONNX export parity (ΔmAP50:95, 200 val images) | — | +0.005 (gate ≤ 0.01) |
 
 The backend loads it automatically (registry `status: production`); `python -m MODEL.export_model` produces the ONNX version for torch-free deployment.
+
+**Getting the weights.** They are not in git. `python -m MODEL.fetch_weights` downloads them from the Hugging Face Hub at the commit pinned in the registry and checks every file's SHA-256 before it is used. The model repo is gated: accept the use conditions on its page once (non-commercial, no weapon targeting, no identification of individuals, human review), then `hf auth login`. Licence: CC BY-NC 4.0, because of the training data (`Docs/DECISIONS.md` ADR-008).
 
 ## 🛰️ Layer 2 — GPS-Free Swarm Brain
 
@@ -151,8 +154,11 @@ python -m MODEL.compare_detectors \
 git clone https://github.com/aryank2212/KAAL_v2.git && cd KAAL_v2
 python -m venv venv && source venv/bin/activate     # Windows: venv\Scripts\activate
 
-pip install -e ".[ml,server]"     # detectors + training + backend
+pip install -e ".[ml,server,hub]" # detectors + training + backend + Hub download
 # pip install -e ".[server]"      # model-free defense + backend only (demo mode, no detector)
+
+hf auth login                      # once, after accepting the terms on the model page
+python -m MODEL.fetch_weights      # production weights (.pth + .onnx), SHA-256 verified
 ```
 
 ### Export for deployment
@@ -161,8 +167,9 @@ pip install -e ".[ml,server]"     # detectors + training + backend
 pip install -e ".[export]"
 python -m MODEL.export_model --parity 200        # production RF-DETR -> ONNX, fails if mAP moves > 0.01
 python -m MODEL.export_model --format tensorrt   # also openvino, coreml, tflite, ... (RF-DETR exporter)
-pip install -e ".[onnx,server]"                  # edge box: ONNX Runtime, no torch
-KAAL_MODEL_PATH=MODEL/runs/export/<run>/<run>.onnx python Frontend_Backend/backend/server.py
+pip install -e ".[onnx,server,hub]"              # edge box: ONNX Runtime, no torch
+python -m MODEL.fetch_weights --format onnx      # the backend then loads the registry's ONNX file
+KAAL_MODEL_PATH=MODEL/runs/export/<run>/<run>.onnx python Frontend_Backend/backend/server.py   # or name one explicitly
 ```
 
 ### Backend
@@ -175,7 +182,7 @@ Serves `http://127.0.0.1:3000`: `/api/health`, `/api/python-data`, `/api/setting
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `KAAL_MODEL_PATH` | production RF-DETR from `MODEL/datasets_registry.yaml` if on disk, else `MODEL/yolov8m.pt` | `.pth`/`.ckpt` → RF-DETR, `.onnx` → ONNX Runtime (no torch), `.pt` → YOLO |
+| `KAAL_MODEL_PATH` | production model from `MODEL/datasets_registry.yaml` (`.pth`, else `.onnx`) if on disk, else `MODEL/yolov8m.pt` | `.pth`/`.ckpt` → RF-DETR, `.onnx` → ONNX Runtime (no torch), `.pt` → YOLO |
 | `KAAL_DETECTOR` | `auto` | force `rfdetr`, `onnx` or `yolo` (auto = from the weights suffix) |
 | `KAAL_HOST` | `127.0.0.1` | bind address (local only by default) |
 | `KAAL_CORS_ORIGINS` | `http://localhost:5173,http://127.0.0.1:5173` | allowed dashboard origins (HTTP + WebSocket) |

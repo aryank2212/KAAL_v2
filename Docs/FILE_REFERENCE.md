@@ -52,7 +52,7 @@ Every tracked file, what it does, and its status. Companion to
 |---|---|---|
 | `MODEL/__init__.py` | core | Package marker and module index. |
 | `MODEL/config.py` | core | `Config` dataclass (paths, patch, FFT, training settings) with validation; enums `DefenseMode` (`none` / `adversarial_training` / `dual_stream`) and `PatchType` (`noise` / `pattern` / `loaded` / `gradient`). |
-| `MODEL/detectors.py` | core | One `Detector` protocol over backends. `RFDETRDetector` (BGR→RGB, `predict(threshold=conf)`, class names from the checkpoint), `ONNXDetector` (exported RF-DETR on ONNX Runtime — same resize/normalise/sigmoid/top-300 as RF-DETR, no torch) and `UltralyticsDetector` (YOLO; class-agnostic NMS, IoU 0.45). `infer_backend()` picks by suffix (`.pth`/`.ckpt` → RF-DETR, `.onnx` → ONNX, else YOLO); `load_detector()` / `as_detector()` build or wrap one; `production_weights()` resolves the registry's production model. Output for every backend: `{"bbox": [x1,y1,x2,y2], "confidence", "class_id", "class_name"}`. |
+| `MODEL/detectors.py` | core | One `Detector` protocol over backends. `RFDETRDetector` (BGR→RGB, `predict(threshold=conf)`, class names from the checkpoint), `ONNXDetector` (exported RF-DETR on ONNX Runtime — same resize/normalise/sigmoid/top-300 as RF-DETR, no torch) and `UltralyticsDetector` (YOLO; class-agnostic NMS, IoU 0.45). `infer_backend()` picks by suffix (`.pth`/`.ckpt` → RF-DETR, `.onnx` → ONNX, else YOLO); `load_detector()` / `as_detector()` build or wrap one; `model_entry()` reads a `models:` entry of the registry (by id, or the production one); `production_weights()` returns the production model's `.pth` if on disk, else its `.onnx`. Output for every backend: `{"bbox": [x1,y1,x2,y2], "confidence", "class_id", "class_name"}`. |
 | `MODEL/fft_scorer.py` | core | Stream 2. `compute_fft_anomaly_score()` = share of AC spectral **power** above `0.5·(1−high_freq_ratio)` cycles/pixel on a mean-removed, Hann-windowed grayscale crop (rfft2, frequency-radius mask, cached windows). `compute_region_scores()` scores each box (None for boxes < `MIN_FFT_SIDE` = 8 px). `DEFAULT_FFT_THRESHOLD = 0.08` (≈ p93 of clean kaal_v3 boxes). |
 | `MODEL/temporal_scorer.py` | core | Stream 3. `TemporalConsistencyDetector` (EMA background, block residual; research API) and `StreamingTemporalCue` (live): 32×32 cell grid, median-normalised signed residual, warm-up calibration (p99.9 × 1.5, floor 0.01), 5-frame persistence, masked background update, local absorb after `max_flagged_frames`, global re-baseline when > `global_frac` of cells change. |
 | `MODEL/dual_stream_defense.py` | core | `DualStreamDefense`: runs the detector, whole-frame FFT, per-box FFT (overlap de-dup, tiny boxes unscored) and the optional temporal cue; returns detections + `anomaly_score`, `objects_flagged`, `temporal`, `is_adversarial`, `defense_action`. Calibrated threshold via a profile JSON. |
@@ -96,6 +96,8 @@ Every tracked file, what it does, and its status. Companion to
 | `MODEL/ablation.py` | research | Phase 1 sweeps over `high_freq_ratio`, threshold, patch scale, region mode. |
 | `MODEL/visualizer.py` | research | Side-by-side clean/attacked panels, prediction drawing, confusion matrices. |
 | `MODEL/export_model.py` | tool | Exports the production RF-DETR via `RFDETR.export` (ONNX, TensorRT, OpenVINO, CoreML, TFLite …); for ONNX writes a `.onnx.json` sidecar (class names, input size, SHA-256s) and, with `--parity N`, fails if ONNX and PyTorch mAP50:95 differ by > 0.01. |
+| `MODEL/publish_model.py` | tool | Hub release (`kaal-publish`). `strip`: inference-only release checkpoint (keeps `model`, `args`, `model_name`, `model_config`, `rfdetr_version`, `best_total_source`; drops optimizer / EMA / loop / callback state and `model_config.pretrain_weights` / `device`; rewrites repo-root paths relative; refuses the file if the repo root or home directory still appears in its bytes; must load with `weights_only=True`). `stage`: SHA-256 check of every file against the registry + card rendering. `upload`: create repo private → gating → one commit → tag → optional `--public` last; prints the registry `hub:` block. |
+| `MODEL/fetch_weights.py` | tool | Restores a published model into the registry paths (`kaal-fetch-weights`, `--format all/pth/onnx`): downloads at the pinned `hub.revision` into a temp dir beside the target, checks the SHA-256 (the ONNX sidecar must name the registry's ONNX hash), then moves it into place; verified files on disk are skipped. Clear messages for gated / private repos. |
 | `MODEL/make_demo_video.py` | tool | Renders a clean → patched → clean clip from one labelled frame for the live demo (`KAAL_CAMERA_SOURCE`). |
 | `MODEL/evaluation/evaluate.py`, `MODEL/evaluation/metrics.py` | legacy | Early PGD/defense evaluation loop and metric container. |
 | `MODEL/visualization/compare.py` | legacy | Ultralytics predictions on clean/adversarial/defended sets for figures. |
@@ -112,13 +114,17 @@ Every tracked file, what it does, and its status. Companion to
 | `MODEL/RESULTS.md` | doc | Measured results: §0 FFT scorer fix, §1–4 Phase 3 benchmark/failure analysis, §6 RF-DETR vs YOLO and the ground-vehicle test, §7 the production model (`rfdetr-small-v4`) and its deployment checks. |
 | `MODEL/README.md` | doc | MODEL package usage. |
 | `MODEL/requirements.txt` | config | Core ML dependencies for `MODEL/`. |
-| `MODEL/datasets_registry.yaml` | doc/data | Machine-readable dataset registry (status, licence, use per model). Validated by `tests/test_datasets_registry.py`. |
+| `MODEL/datasets_registry.yaml` | doc/data | Machine-readable dataset registry (status, licence, use per model) and model registry (`models:` — weights, SHA-256, status, `hub:` repo/tag/commit). Validated by `tests/test_datasets_registry.py`. |
+| `MODEL/hub/model_card_template.md` | doc | Hugging Face model card template (YAML metadata: CC BY-NC 4.0, gated-access conditions, `model-index`; quick-start code for ONNX Runtime, `rfdetr` and KAAL). `publish_model` fills `{{REPO_ID}}`, `{{TAG}}`, file names and hashes from the registry. |
 | `MODEL/custom_evaluation_report.txt`, `MODEL/test_report_YOLOv8m_base.txt`, `MODEL/test_report_YOLOv8n_base.txt` | legacy | Reports from the original YOLO experiments (kept for history). |
 | `MODEL/yolov8n.pt`, `MODEL/yolov8m.pt`, `MODEL/yolo26n.pt` | legacy | Stock Ultralytics COCO weights committed by the original project (backend default `KAAL_MODEL_PATH` is still `MODEL/yolov8m.pt`). |
 | `MODEL/kaal_eye_v2.pt` | legacy | YOLO weights from the original KAAL training: 59 classes (aircraft types `A10`…, ground vehicles such as `Light Armoured Vehicle (LAV)`, `Military Engineering Vehicle (MEV)`, plus `Civilian Car`, `Civilian Aircraft`, `Gun`, `Human`). |
 
-Trained KAAL weights are **not** committed (size); they live under
-`MODEL/runs/train/` and are described in `Docs/MODEL_CARD.md`.
+Trained KAAL weights are **not** committed (size). Training runs live under
+`MODEL/runs/train/`, release checkpoints under `MODEL/runs/release/`, ONNX
+exports under `MODEL/runs/export/`; published models are restored from the
+Hugging Face Hub with `python -m MODEL.fetch_weights` (`Docs/MODEL_CARD.md`,
+`Docs/DECISIONS.md` ADR-008).
 
 ## `Frontend_Backend/`
 
@@ -167,7 +173,10 @@ Trained KAAL weights are **not** committed (size); they live under
 | `test_build_ground_test.py` | Orion / Russian / Search_2 mapping, Roboflow-copy collapse, crop geometry. |
 | `test_compare_detectors.py` | COCO mAP maths, ignore regions, class filter, agnostic + per-source summaries. |
 | `test_benchmark.py`, `test_failure_analysis.py`, `test_config.py`, `test_make_demo_video.py` | Research harnesses, config validation, demo clip. |
-| `test_datasets_registry.py` | Registry schema and consistency with the dataset builders. |
+| `test_datasets_registry.py` | Registry schema and consistency with the dataset builders; published models pin a 40-hex Hub commit and SHA-256s. |
+| `test_export_model.py` | ONNX parity maths (identical vs degraded detector), streamed SHA-256. |
+| `test_fetch_weights.py` | Hub restore with a fake downloader: pinned revision, hash mismatch writes nothing, foreign sidecar rejected, verified files skipped, stale files replaced. |
+| `test_publish_model.py` | Release-file hash checks, card rendering (no placeholders, valid YAML metadata), upload order (private → gated → commit → tag → public last), checkpoint stripping and path-leak refusal (torch tests skip without torch). |
 | `integration/test_server.py` | Backend: REST schema, settings validation + token, CORS + WS origin, worker → broadcast path, drop-oldest queue, live confidence. |
 | `integration/test_dual_stream.py` | Full `DualStreamDefense.predict()` with a fake detector (frame-level and per-region detection ≥ 80%). |
 | `integration/test_end_to_end.py` | GPU-only (`-m gpu`): 1-epoch train + evaluation. |

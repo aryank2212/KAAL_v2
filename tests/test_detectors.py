@@ -112,6 +112,34 @@ class TestProductionWeights:
         assert production_weights(reg) is None
         assert production_weights(tmp_path / "absent.yaml") is None
 
+    def test_falls_back_to_onnx_when_only_it_is_on_disk(self, tmp_path, monkeypatch):
+        import MODEL.detectors as det
+
+        monkeypatch.setattr(det, "REPO_ROOT", tmp_path)
+        reg = tmp_path / "registry.yaml"
+        reg.write_text(
+            "models:\n  - {id: new, status: production, weights: w/best.pth, onnx: e/best.onnx}\n"
+        )
+        (tmp_path / "e").mkdir()
+        (tmp_path / "e" / "best.onnx").write_bytes(b"x")
+        assert det.production_weights(reg) == tmp_path / "e" / "best.onnx"
+        (tmp_path / "w").mkdir()
+        (tmp_path / "w" / "best.pth").write_bytes(b"x")
+        assert det.production_weights(reg) == tmp_path / "w" / "best.pth"  # .pth preferred
+
+    def test_model_entry_by_id_or_production(self, tmp_path):
+        from MODEL.detectors import model_entry
+
+        reg = tmp_path / "registry.yaml"
+        reg.write_text(
+            "models:\n"
+            "  - {id: old, status: superseded, weights: a.pth}\n"
+            "  - {id: new, status: production, weights: b.pth}\n"
+        )
+        assert model_entry(None, reg)["id"] == "new"
+        assert model_entry("old", reg)["id"] == "old"
+        assert model_entry("missing", reg) is None
+
 
 class _FakeIO:
     def __init__(self, name, shape=None):
