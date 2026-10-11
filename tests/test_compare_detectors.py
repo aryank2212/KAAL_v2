@@ -84,3 +84,25 @@ def test_summarize_agnostic_and_per_source():
     assert out["agnostic_mAP50"] == pytest.approx(1.0)
     assert out["per_source_mAP50_95"]["russian"] == pytest.approx(1.0)
     assert out["per_source_mAP50_95"]["web"] == pytest.approx(0.0)
+
+
+def test_near_duplicates_of_finds_copies_and_mirror_images(tmp_path):
+    import cv2
+
+    from MODEL.compare_detectors import near_duplicates_of
+
+    rng = np.random.default_rng(0)
+    photos = [
+        cv2.GaussianBlur(rng.integers(0, 255, (90, 120, 3), dtype=np.uint8), (7, 7), 0)
+        for _ in range(3)
+    ]
+    ref = tmp_path / "train"
+    ref.mkdir()
+    cv2.imwrite(str(ref / "a.jpg"), photos[0])
+    cv2.imwrite(str(ref / "b.jpg"), photos[1][:, ::-1])  # mirrored copy
+    test_imgs = []
+    for i, img in enumerate(photos):
+        path = tmp_path / f"test_{i}.jpg"
+        cv2.imwrite(str(path), img)
+        test_imgs.append(path)
+    assert near_duplicates_of(test_imgs, ref, max_dist=10) == {0, 1}

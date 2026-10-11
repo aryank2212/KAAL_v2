@@ -242,3 +242,66 @@ def test_openimages_tank_filters_group_of_and_people(tmp_path):
     with_people = openimages_tank_samples(tmp_path, drop_person_images=False)
     assert sorted(s.image.stem for s in with_people) == ["a", "c"]
     assert with_people[1].classes == [CLS["tank"], CLS["person"]]  # never soldier
+
+
+def _photo(seed):
+    rng = np.random.default_rng(seed)
+    return cv2.GaussianBlur(rng.integers(0, 255, (96, 128, 3), dtype=np.uint8), (7, 7), 0)
+
+
+def _v4_sources(tmp_path):
+    """One photo shared by two sources, landing in test (uav_tank) and train (dvids)."""
+    from MODEL import build_dataset as bd
+
+    uav_stem = next(f"tank_{i}" for i in range(500) if bd._stable_split(f"tank_{i}") == "test")
+    block = next(
+        k for k in range(500) if bd._stable_split(f"dvids:{k}", (0.8, 0.1, 0.1)) == "train"
+    )
+    shared, other = _photo(1), _photo(2)
+
+    uav = tmp_path / "uav"
+    (uav / "images").mkdir(parents=True)
+    (uav / "labels").mkdir()
+    (uav / "data.yaml").write_text("names: {0: tank}\n")
+    for stem, img in ((uav_stem, shared), ("tank_other", other)):
+        cv2.imwrite(str(uav / "images" / f"{stem}.jpg"), img)
+        (uav / "labels" / f"{stem}.txt").write_text("0 0.5 0.5 0.3 0.3\n")
+
+    dvids = tmp_path / "dvids"
+    (dvids / "train" / "images").mkdir(parents=True)
+    (dvids / "train" / "labels").mkdir(parents=True)
+    (dvids / "data.yaml").write_text("names: {0: soldier, 1: tank}\n")
+    dvids_stem = f"dvids_image_{block * 20}"
+    cv2.imwrite(str(dvids / "train" / "images" / f"{dvids_stem}.jpg"), shared)
+    (dvids / "train" / "labels" / f"{dvids_stem}.txt").write_text("1 0.5 0.5 0.3 0.3\n")
+    return uav, dvids, uav_stem, dvids_stem
+
+
+def _run_build(monkeypatch, tmp_path, uav, dvids, *extra):
+    import sys
+
+    from MODEL import build_dataset as bd
+
+    out = tmp_path / "out"
+    argv = ["build_dataset", "--out", str(out), "--uav-tank", str(uav), "--dvids", str(dvids),
+            "--caps", "uav_tank=-1:-1:-1,dvids=-1:-1:-1", "--workers", "1", *extra]  # fmt: skip
+    monkeypatch.setattr(sys, "argv", argv)
+    bd.main()
+    names = {p.name: p.parent.parent.name for p in out.glob("*/images/*.jpg")}
+    return names, json.loads((out / "manifest.json").read_text())
+
+
+def test_v4_cross_source_duplicate_lives_in_one_split(tmp_path, monkeypatch):
+    uav, dvids, uav_stem, dvids_stem = _v4_sources(tmp_path)
+    names, manifest = _run_build(monkeypatch, tmp_path, uav, dvids)
+    assert names[f"uav_tank_{uav_stem}.jpg"] == "test"
+    assert f"dvids_{dvids_stem}.jpg" not in names  # its train copy was removed
+    assert manifest["cross_split_duplicates_removed"] == 1
+
+
+def test_v4_cross_source_dedup_can_be_disabled(tmp_path, monkeypatch):
+    uav, dvids, uav_stem, dvids_stem = _v4_sources(tmp_path)
+    names, manifest = _run_build(monkeypatch, tmp_path, uav, dvids, "--cross-dup-dist", "-1")
+    assert names[f"uav_tank_{uav_stem}.jpg"] == "test"
+    assert names[f"dvids_{dvids_stem}.jpg"] == "train"  # the leak kaal_v3 had
+    assert manifest["cross_split_duplicates_removed"] == 0
