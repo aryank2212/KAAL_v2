@@ -24,7 +24,7 @@ detection would cause harm without human review.
 
 | Item | Value |
 |---|---|
-| Data | `kaal_v3` (11,633 train images): legacy KAAL set, VisDrone2019-DET (3,000), military aircraft subset (3,500), Simuletic UAV tanks (133) — see `docs/DATASETS.md` |
+| Data | `kaal_v3` (11,633 train images): legacy KAAL set, VisDrone2019-DET (3,000), military aircraft subset (3,500), Simuletic UAV tanks (133) — see `Docs/DATASETS.md` |
 | Init | COCO-pretrained RF-DETR-Small |
 | Schedule | 12 epochs, batch 4 × grad-accum 4, lr 1e-4, EMA, early stopping (patience 5) |
 | Hardware / time | RTX 4060 Laptop 8 GB, 1.99 h |

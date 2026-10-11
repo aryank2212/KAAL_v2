@@ -15,7 +15,7 @@ Backends
           YOLO at equal latency. Loads ``checkpoint_best_total.pth`` files
           written by ``python -m MODEL.train_detector --arch rfdetr-*``.
 
-RF-DETR is the production detector (docs/DECISIONS.md, ADR-001); YOLO is an
+RF-DETR is the production detector (Docs/DECISIONS.md, ADR-001); YOLO is an
 optional backend. ``production_weights()`` resolves the weights of the model
 marked ``status: production`` in ``MODEL/datasets_registry.yaml``.
 

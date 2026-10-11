@@ -65,7 +65,7 @@ Camera frame
 | Unseen ground-vehicle photos (798), any-class mAP50 | **0.722** | 0.015 |
 | Latency (RTX 4060, FP32, batch 1) | 17.1 ms | 7.5 ms |
 
-RF-DETR is therefore the production detector (`docs/DECISIONS.md`, ADR-001); YOLO stays available (`KAAL_DETECTOR=yolo`) for speed-critical edge targets.
+RF-DETR is therefore the production detector (`Docs/DECISIONS.md`, ADR-001); YOLO stays available (`KAAL_DETECTOR=yolo`) for speed-critical edge targets.
 
 ## 🛰️ Layer 2 — GPS-Free Swarm Brain
 
@@ -75,7 +75,7 @@ Each drone acts on local knowledge only — its own velocity, objects within sig
 
 ## 🗂️ Dataset (`kaal_v4`)
 
-`python -m MODEL.build_dataset` merges six sources into one YOLO-format dataset with a coarse 9-class taxonomy that both RF-DETR and YOLO train on (full lineage, licences and data findings: [`docs/DATASETS.md`](docs/DATASETS.md); machine-readable registry: `MODEL/datasets_registry.yaml`):
+`python -m MODEL.build_dataset` merges six sources into one YOLO-format dataset with a coarse 9-class taxonomy that both RF-DETR and YOLO train on (full lineage, licences and data findings: [`Docs/DATASETS.md`](Docs/DATASETS.md); machine-readable registry: `MODEL/datasets_registry.yaml`):
 
 `aircraft · helicopter · tank · armored_vehicle · artillery · engineering_vehicle · soldier · vehicle · person`
 
@@ -122,12 +122,12 @@ python -m MODEL.compare_detectors \
 
 | Document | Contents |
 |---|---|
-| [`docs/WALKTHROUGH.md`](docs/WALKTHROUGH.md) | deep structural walkthrough: architecture, live pipeline frame by frame, every subsystem, runbook |
-| [`docs/FILE_REFERENCE.md`](docs/FILE_REFERENCE.md) | every file, its status (core / tool / research / legacy) and purpose |
-| [`docs/DATASETS.md`](docs/DATASETS.md) | dataset lineage, class mappings, licences, data problems found, how to add a dataset |
-| [`docs/MODEL_CARD.md`](docs/MODEL_CARD.md) | production detector: data, metrics, limits, intended use |
-| [`docs/DECISIONS.md`](docs/DECISIONS.md) | architecture decision records (RF-DETR, FFT scorer, temporal cue, data policy, security) |
-| [`docs/FUTURE_SCALING.md`](docs/FUTURE_SCALING.md) | scaling to new models, tasks and hardware tiers with concrete tech stacks |
+| [`Docs/WALKTHROUGH.md`](Docs/WALKTHROUGH.md) | deep structural walkthrough: architecture, live pipeline frame by frame, every subsystem, runbook |
+| [`Docs/FILE_REFERENCE.md`](Docs/FILE_REFERENCE.md) | every file, its status (core / tool / research / legacy) and purpose |
+| [`Docs/DATASETS.md`](Docs/DATASETS.md) | dataset lineage, class mappings, licences, data problems found, how to add a dataset |
+| [`Docs/MODEL_CARD.md`](Docs/MODEL_CARD.md) | production detector: data, metrics, limits, intended use |
+| [`Docs/DECISIONS.md`](Docs/DECISIONS.md) | architecture decision records (RF-DETR, FFT scorer, temporal cue, data policy, security) |
+| [`Docs/FUTURE_SCALING.md`](Docs/FUTURE_SCALING.md) | scaling to new models, tasks and hardware tiers with concrete tech stacks |
 | [`MODEL/RESULTS.md`](MODEL/RESULTS.md) | every measured result |
 
 ---

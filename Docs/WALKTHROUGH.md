@@ -318,7 +318,7 @@ sweeps), `evaluator.py` (clean/attacked/defended passes).
 | `4f37ef7` | CI matrix + dashboard job, `ml` extra, merged README. |
 | `bb31d83` | Independent ground-vehicle test set, ignore regions, duplicate-aware splits. |
 | `82e2c11` | RF-DETR chosen as production (RESULTS §6); `kaal_v4` pipeline (DVIDS, Open Images tanks), dataset registry. |
-| next | Production RF-DETR fine-tuned on `kaal_v4`; documentation set (`docs/`). |
+| next | Production RF-DETR fine-tuned on `kaal_v4`; documentation set (`Docs/`). |
 
 Measured outcomes are in `MODEL/RESULTS.md` (§0 scorer, §6 comparison, §7
 kaal_v4 model).

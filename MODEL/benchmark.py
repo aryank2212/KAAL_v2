@@ -177,7 +177,7 @@ def generate_universal_perturbation(
     The default (``low_freq=True``) is a smoothed random field clipped to
     ``+-epsilon``. Smoothing keeps spectral energy in the low-frequency band,
     which is exactly the FFT detector's failure case (documented in
-    `docs/failure-analysis.md`). ``low_freq=False`` yields a sharp noise
+    `MODEL/RESULTS.md` §1). ``low_freq=False`` yields a sharp noise
     pattern that the FFT detector catches easily.
     """
     if not images:

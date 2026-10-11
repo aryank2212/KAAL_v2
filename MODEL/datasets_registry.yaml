@@ -1,7 +1,7 @@
 # KAAL dataset registry — single source of truth for data lineage.
 #
 # Every dataset that was used, built, downloaded or evaluated-and-rejected is
-# listed here. Human-readable view: docs/DATASETS.md.
+# listed here. Human-readable view: Docs/DATASETS.md.
 # Validated by tests/test_datasets_registry.py (schema + consistency with the
 # builders). Update this file in the same commit as any data change.
 #
@@ -181,7 +181,7 @@ sources:
     license: CC BY-NC 4.0
     status: rejected
     role: candidate
-    notes: 647 GB — too large for this machine; revisit for synthetic pre-training (docs/FUTURE_SCALING.md)
+    notes: 647 GB — too large for this machine; revisit for synthetic pre-training (Docs/FUTURE_SCALING.md)
 
   - id: drc_camouflage
     name: DRC CARLA multi-vehicle camouflage

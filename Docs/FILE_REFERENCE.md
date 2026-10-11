@@ -33,16 +33,16 @@ Every tracked file, what it does, and its status. Companion to
 | `.github/workflows/ci.yml` | config | On every push/PR: ruff check + format check, mypy, pytest (`-m "not gpu"`) on Python 3.11 and 3.12, dashboard `npm ci` + eslint + `vite build`. |
 | `.github/workflows/integration.yml` | config | Manual (`workflow_dispatch`) GPU end-to-end test; needs a self-hosted CUDA runner. |
 
-## `docs/`
+## `Docs/` — documentation (and the original project photos / screenshots)
 
 | File | Status | Purpose |
 |---|---|---|
-| `docs/WALKTHROUGH.md` | doc | Deep structural walkthrough: architecture, data flow, every subsystem, what was done and how it was verified. |
-| `docs/FILE_REFERENCE.md` | doc | This file. |
-| `docs/DATASETS.md` | doc | Dataset lineage, licences, which model used which data; human-readable view of `MODEL/datasets_registry.yaml`. |
-| `docs/DECISIONS.md` | doc | Architecture decision records (detector choice, scorer rewrite, temporal cue, data policy, security). |
-| `docs/MODEL_CARD.md` | doc | Model card for the production detector: intended use, data, metrics, limitations, ethics. |
-| `docs/FUTURE_SCALING.md` | doc | Scaling paths to new models, tasks and hardware tiers, with concrete tech stacks. |
+| `Docs/WALKTHROUGH.md` | doc | Deep structural walkthrough: architecture, data flow, every subsystem, what was done and how it was verified. |
+| `Docs/FILE_REFERENCE.md` | doc | This file. |
+| `Docs/DATASETS.md` | doc | Dataset lineage, licences, which model used which data; human-readable view of `MODEL/datasets_registry.yaml`. |
+| `Docs/DECISIONS.md` | doc | Architecture decision records (detector choice, scorer rewrite, temporal cue, data policy, security). |
+| `Docs/MODEL_CARD.md` | doc | Model card for the production detector: intended use, data, metrics, limitations, ethics. |
+| `Docs/FUTURE_SCALING.md` | doc | Scaling paths to new models, tasks and hardware tiers, with concrete tech stacks. |
 
 ## `MODEL/` — detection, defense, data, training, evaluation
 
@@ -117,7 +117,7 @@ Every tracked file, what it does, and its status. Companion to
 | `MODEL/kaal_eye_v2.pt` | legacy | YOLO weights from the original KAAL training: 59 classes (aircraft types `A10`…, ground vehicles such as `Light Armoured Vehicle (LAV)`, `Military Engineering Vehicle (MEV)`, plus `Civilian Car`, `Civilian Aircraft`, `Gun`, `Human`). |
 
 Trained KAAL weights are **not** committed (size); they live under
-`MODEL/runs/train/` and are described in `docs/MODEL_CARD.md`.
+`MODEL/runs/train/` and are described in `Docs/MODEL_CARD.md`.
 
 ## `Frontend_Backend/`
 

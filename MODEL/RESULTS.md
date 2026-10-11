@@ -242,7 +242,7 @@ data for those classes is ~600 near-identical scenes (§6.4), which is what
 
 ### 6.3 Decision
 
-**RF-DETR is the KAAL production detector** (`docs/DECISIONS.md`, ADR-001):
+**RF-DETR is the KAAL production detector** (`Docs/DECISIONS.md`, ADR-001):
 +3.5 mAP50:95 on `kaal_v3`, smaller drop under attack, and 0.722 vs 0.015
 any-class mAP50 on unseen ground vehicles. YOLO stays available as an
 optional backend (`KAAL_DETECTOR=yolo`) for speed-critical edge targets.
