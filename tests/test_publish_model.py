@@ -87,6 +87,16 @@ def test_card_template_is_the_committed_file():
     assert CARD_TEMPLATE.exists()
 
 
+def test_card_metadata_keys_the_hub_rejects_are_caught(tmp_path):
+    template = tmp_path / "card.md"
+    template.write_text(
+        "---\nextra_gated_fields:\n  I accept CC BY-NC 4.0: checkbox\n---\n# {{MODEL_ID}}\n"
+    )
+    entry = {"id": "m", "weights": "m.pth", "sha256": "1", "onnx": "m.onnx", "onnx_sha256": "2"}
+    with pytest.raises(ValueError, match="must not contain"):
+        render_card(entry, "someone/repo", "v1", template)
+
+
 class _FakeApi:
     def __init__(self):
         self.calls = []

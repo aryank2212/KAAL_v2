@@ -35,6 +35,8 @@ import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+import yaml
+
 from .detectors import REGISTRY, REPO_ROOT, model_entry
 from .export_model import sha256
 
@@ -156,7 +158,24 @@ def render_card(
     left = sorted(set(re.findall(r"\{\{[A-Z0-9_]+\}\}", card)))
     if left:
         raise ValueError(f"model card template has unfilled placeholders: {left}")
+    bad = _bad_metadata_keys(yaml.safe_load(card.split("---")[1]))
+    if bad:  # the Hub refuses the commit for these
+        raise ValueError(f"model card metadata keys must not contain '.' or '$': {bad}")
     return card
+
+
+def _bad_metadata_keys(meta: Any) -> List[str]:
+    """Keys (at any depth) that the Hub's YAML validation rejects."""
+    bad: List[str] = []
+    if isinstance(meta, dict):
+        for key, value in meta.items():
+            if "." in str(key) or "$" in str(key):
+                bad.append(str(key))
+            bad += _bad_metadata_keys(value)
+    elif isinstance(meta, list):
+        for value in meta:
+            bad += _bad_metadata_keys(value)
+    return bad
 
 
 def stage(

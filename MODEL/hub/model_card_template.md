@@ -22,7 +22,7 @@ extra_gated_prompt: >-
   and perception robustness under CC BY-NC 4.0. Access is granted automatically
   once you accept the conditions below.
 extra_gated_fields:
-  I will use this model for research or other non-commercial purposes only (CC BY-NC 4.0): checkbox
+  I will use this model only for research or other non-commercial purposes, as the CC BY-NC licence requires: checkbox
   I will not use this model for autonomous weapon targeting or engagement: checkbox
   I will not use this model to identify, track or profile individual people: checkbox
   A human will review any decision informed by this model's outputs: checkbox

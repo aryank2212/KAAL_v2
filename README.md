@@ -81,7 +81,7 @@ RF-DETR-Small fine-tuned on `kaal_v4` (warm start from v3, 10 epochs, 2.43 h on 
 
 The backend loads it automatically (registry `status: production`); `python -m MODEL.export_model` produces the ONNX version for torch-free deployment.
 
-**Getting the weights.** They are not in git. `python -m MODEL.fetch_weights` downloads them from the Hugging Face Hub at the commit pinned in the registry and checks every file's SHA-256 before it is used. The model repo is gated: accept the use conditions on its page once (non-commercial, no weapon targeting, no identification of individuals, human review), then `hf auth login`. Licence: CC BY-NC 4.0, because of the training data (`Docs/DECISIONS.md` ADR-008).
+**Getting the weights.** They are not in git. `python -m MODEL.fetch_weights` downloads them from the Hugging Face Hub ([`ak-2468/kaal-rfdetr-small`](https://huggingface.co/ak-2468/kaal-rfdetr-small), tag `v4`) at the commit pinned in the registry and checks every file's SHA-256 before it is used. The model repo is gated: accept the use conditions on its page once (non-commercial, no weapon targeting, no identification of individuals, human review), then `hf auth login`. Licence: CC BY-NC 4.0, because of the training data (`Docs/DECISIONS.md` ADR-008).
 
 ## 🛰️ Layer 2 — GPS-Free Swarm Brain
 

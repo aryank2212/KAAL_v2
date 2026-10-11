@@ -22,6 +22,8 @@
   - CC BY-NC 4.0, gated access with four conditions, `model-index` metrics.
   - Its ONNX Runtime and PyTorch quick-start code was executed against the release files and gives the same detections as KAAL's detectors (4 images, up to 93 detections each).
 - [x] **Decision record:** `Docs/DECISIONS.md` ADR-008 (host, licence, gating, private-first).
+- [x] **Published** [`ak-2468/kaal-rfdetr-small`](https://huggingface.co/ak-2468/kaal-rfdetr-small): private, gated (auto), tag `v4` = commit `496fd0e9`. The Hub's SHA-256 values match the registry, and a real `fetch_weights` round trip was verified.
+- [x] **Card metadata fix:** the Hub refuses card metadata keys containing `.` or `$`, so `render_card` now checks for them before any upload.
 
 ### Phase 4.6 — Production model decision, data audit, kaal_v4, documentation (2026-10-11)
 

@@ -302,6 +302,11 @@ models:
     onnx_sha256: f0c6fe9aab09af6240ffc9766e188b19acb64ef970570b52a67a67b24c288e58
     training_checkpoint: MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth
     training_checkpoint_sha256: d38e4896dbcf80809d9f635f754d2be5dfa5bb7fd267281caad0a82af9c13d39
+    # Published 2026-10-12: private + gated (auto-approve), CC BY-NC 4.0 (Docs/DECISIONS.md ADR-008).
+    hub:
+      repo_id: ak-2468/kaal-rfdetr-small
+      tag: v4
+      revision: 496fd0e909bce8eb4300aa60aa36b4bfd9b2356a
     status: production
     notes: >-
       Warm start from rfdetr-small-v3; 10 epochs, lr 5e-5, batch 4 x grad-accum 4, 2.43 h (RTX 4060).

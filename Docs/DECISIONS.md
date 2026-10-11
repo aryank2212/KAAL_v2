@@ -210,3 +210,10 @@ Face model repo.
 - **Re-licensing.** Before any commercial use, retrain only on the
   licence-clean registry sources (DVIDS public domain / CC0, Open Images
   CC BY) and release that model under a permissive licence.
+
+**Outcome (2026-10-12):** `rfdetr-small-v4` published to
+[`ak-2468/kaal-rfdetr-small`](https://huggingface.co/ak-2468/kaal-rfdetr-small): private, gated (auto), tag `v4` =
+commit `496fd0e9…`. The Hub's LFS SHA-256 of the `.pth` and `.onnx` equals the
+registry hashes, and a real `fetch_weights` round trip from the Hub restored
+and verified all three files. The owner makes the repo public after reviewing
+the page.
