@@ -227,11 +227,16 @@ def render_markdown(report: Dict[str, Any]) -> str:
         if report.get("eval_classes")
         else ""
     )
+    dedup = (
+        f" {report['excluded_near_duplicates']} near-duplicates of `{report['dedup_against']}` excluded."
+        if report.get("dedup_against")
+        else ""
+    )
     lines = [
         "# KAAL detector comparison",
         "",
         f"Test split: `{report['data']}` ({report['n_images']} images). "
-        f"Attacked = noise/pattern patch inside every ground-truth box.{scope}",
+        f"Attacked = noise/pattern patch inside every ground-truth box.{scope}{dedup}",
         "",
         "| Detector | mAP50 | mAP50:95 | mAP50:95 attacked | Drop |"
         + (" Any-class mAP50 | Any-class mAP50:95 |" if agnostic else "")
@@ -284,6 +289,27 @@ def render_markdown(report: Dict[str, Any]) -> str:
         f"({f['boxes_scored']} boxes; threshold-free AUROC {f['auroc']:.3f}).",
     ]
     return "\n".join(lines) + "\n"
+
+
+def near_duplicates_of(images: List[Path], reference_dir: Path, max_dist: int) -> set:
+    """Indices of ``images`` within ``max_dist`` dHash bits of any image in ``reference_dir``."""
+    from concurrent.futures import ThreadPoolExecutor
+
+    from .build_dataset import dhash, near_duplicate_pairs
+
+    reference = sorted(reference_dir.glob("*.jpg"))
+    with ThreadPoolExecutor(max_workers=8) as pool:
+        hashes = list(pool.map(dhash, list(images) + reference))
+    keep = [i for i, h in enumerate(hashes) if h is not None]
+    plain = np.stack([hashes[i][0] for i in keep])  # type: ignore[index]
+    mirrored = np.stack([hashes[i][1] for i in keep])  # type: ignore[index]
+    n = len(images)
+    dupes = set()
+    for a, b in near_duplicate_pairs(plain, mirrored, max_dist):
+        i, j = keep[a], keep[b]
+        if i < n <= j:
+            dupes.add(i)
+    return dupes
 
 
 def source_of(path: Path) -> str:
@@ -350,12 +376,27 @@ def main() -> None:
         action="store_true",
         help="Also report class-agnostic mAP over the scored classes",
     )
+    parser.add_argument(
+        "--dedup-against",
+        default="",
+        help="Image directory (e.g. the train split); test images that near-duplicate any "
+        "image there (flip-aware dHash) are excluded and counted in the report",
+    )
+    parser.add_argument(
+        "--dup-dist", type=int, default=20, help="dHash bit distance for --dedup-against"
+    )
     parser.add_argument("--out", default=str(HERE / "runs" / "compare"))
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     data_dir = Path(args.data)
     images, class_names = load_split(data_dir, args.split, args.max_images)
+    excluded = 0
+    if args.dedup_against:
+        dupes = near_duplicates_of(images, Path(args.dedup_against), args.dup_dist)
+        excluded = len(dupes)
+        images = [p for i, p in enumerate(images) if i not in dupes]
+        logger.info("Excluded %d near-duplicates of %s", excluded, args.dedup_against)
     eval_classes = [
         class_names.index(c.strip()) for c in args.eval_classes.split(",") if c.strip()
     ] or None
@@ -375,6 +416,8 @@ def main() -> None:
         "n_images": len(images),
         "eval_classes": [class_names[c] for c in eval_classes] if eval_classes else None,
         "ignore_regions": sum(len(i) for i in ignores),
+        "excluded_near_duplicates": excluded,
+        "dedup_against": args.dedup_against or None,
         "detectors": {},
     }
     for spec in args.detector:

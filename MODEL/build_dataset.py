@@ -41,8 +41,23 @@ Sources
              download (``python -m MODEL.fetch_datasets aircraft``) works.
   uav_tank   Simuletic synthetic drone-view tanks -> ``tank``.
 
+  dvids      llama-farm/military-labeled-yolo — DVIDS U.S. DoD public-domain
+             photos (CC0): soldier, tank, apc, artillery, mlrs, missile
+             launcher, trucks, aircraft. Split 80/10/10 by upload block.
+  openimages_tank  Open Images V7 photos with a Tank box; images with
+             group-of boxes or people are dropped (see adapter docstring).
+
+Versions
+  kaal_v3    legacy + visdrone(3000) + aircraft + uav_tank, per-source leakage
+             check only (git 6581dc5; reproduce with ``--caps`` = V3_CAPS,
+             ``--cross-dup-dist -1 --keep-unlabeled-legacy``).
+  kaal_v4    (default) + all VisDrone train images + dvids + openimages_tank;
+             near-duplicates grouped across ALL sources before splitting, so
+             no photo appears in two splits even via another source; legacy
+             images without labels dropped.
+
 Usage:
-    python -m MODEL.build_dataset --out MODEL/Datasets/kaal_v3
+    python -m MODEL.build_dataset                       # -> MODEL/Datasets/kaal_v4
 """
 
 import argparse
@@ -113,11 +128,38 @@ ROTORCRAFT = {
     "NH90", "UH60", "WZ10", "WZ9", "Z10", "Z19", "Z21",
 }  # fmt: skip
 
+# llama-farm/military-labeled-yolo (DVIDS) class names -> taxonomy. ``None``
+# drops the box: KAAL has no maritime class, and a warship is not a "vehicle".
+DVIDS_MAP: Dict[str, Optional[int]] = {
+    "soldier": CLS["soldier"],
+    "tank": CLS["tank"],
+    "apc": CLS["armored_vehicle"],
+    "artillery": CLS["artillery"],
+    "mlrs": CLS["artillery"],  # multiple rocket launcher
+    "missile_launcher": CLS["artillery"],
+    "military_truck": CLS["vehicle"],
+    "helicopter": CLS["helicopter"],
+    "aircraft": CLS["aircraft"],
+    "warship": None,
+    "car": CLS["vehicle"],
+    "truck": CLS["vehicle"],
+}
+
+# Open Images leaf classes kept by ``fetch_datasets openimages_tank``.
+OPENIMAGES_MAP: Dict[str, int] = {
+    "Tank": CLS["tank"],
+    "Helicopter": CLS["helicopter"],
+    "Airplane": CLS["aircraft"],
+    **{c: CLS["vehicle"] for c in ("Car", "Truck", "Van", "Bus", "Motorcycle", "Bicycle")},
+}
+
 LICENSES = {
     "legacy": "KAAL project data (Roboflow exports; see original sources)",
     "visdrone": "VisDrone2019-DET — academic, non-commercial use",
     "aircraft": "a2015003713/military-aircraft-detection-dataset (Kaggle mirror; no license declared)",
     "uav_tank": "Simuletic UAV tank sample — CC BY-NC 4.0 per HF metadata (README says CC BY 4.0)",
+    "dvids": "llama-farm/military-labeled-yolo — DVIDS U.S. DoD public-domain imagery, labels CC0-1.0",
+    "openimages_tank": "Google Open Images V7 — annotations CC BY 4.0, images CC BY 2.0 (per image)",
 }
 
 Box = Tuple[int, float, float, float, float]  # cls, cx, cy, w, h (normalized)
@@ -318,9 +360,13 @@ def legacy_samples(
     resplit: Optional[Tuple[float, float, float]] = None,
     dup_dist: int = 24,
     workers: int = 8,
+    keep_unlabeled: bool = False,
 ) -> List[Sample]:
+    """Legacy KAAL set. Images without any box are dropped unless
+    ``keep_unlabeled``: in this set they are unannotated strike-footage frames
+    (``mil_*``), not verified empty scenes, so they must not train as negatives."""
     samples: List[Sample] = []
-    dropped = 0
+    dropped = unlabeled = 0
     for split in SPLITS:
         img_dir, lbl_dir = root / split / "images", root / split / "labels"
         if not img_dir.is_dir():
@@ -332,6 +378,9 @@ def legacy_samples(
             boxes = parse_yolo_file(lbl_dir / f"{stem}.txt", LEGACY_MAP)
             if boxes is None:
                 dropped += 1
+                continue
+            if not boxes and not keep_unlabeled:
+                unlabeled += 1
                 continue
             samples.append(
                 Sample(
@@ -361,10 +410,11 @@ def legacy_samples(
             seen_eval_groups.add(s.group)  # one image per photo in val/test
             kept.append(s)
     logger.info(
-        "legacy: %d samples (%s split), %d images dropped (unreliable class 0)",
+        "legacy: %d samples (%s split), %d images dropped (unreliable class 0), %d unlabeled",
         len(kept),
         "stratified re-" if resplit else "original",
         dropped,
+        unlabeled,
     )
     return kept
 
@@ -453,6 +503,93 @@ def uav_tank_samples(root: Path) -> List[Sample]:
 
 
 # ── assembly ─────────────────────────────────────────────────────────────
+
+
+def dvids_samples(root: Path) -> List[Sample]:
+    """DVIDS military photos. The set ships one ``train`` folder, so it is split
+    80/10/10 here. DVIDS ids are sequential per upload, and one upload is
+    usually one event, so photos are grouped in blocks of 20 ids to keep an
+    event inside one split."""
+    data = yaml.safe_load((root / "data.yaml").read_text())
+    names = data["names"]
+    names = [names[i] for i in sorted(names)] if isinstance(names, dict) else list(names)
+    class_map = {i: c for i, n in enumerate(names) if (c := DVIDS_MAP.get(n)) is not None}
+    samples: List[Sample] = []
+    for folder in ("train", "val", "valid", "test"):
+        img_dir = root / folder / "images"
+        if not img_dir.is_dir():
+            continue
+        for img in sorted(img_dir.glob("*.jpg")):
+            label = root / folder / "labels" / f"{img.stem}.txt"
+            if not label.exists():
+                continue  # unlabeled
+            boxes = parse_yolo_file(label, class_map) or []  # unmapped (warship) boxes dropped
+            digits = re.sub(r"\D", "", img.stem)
+            block = f"dvids:{int(digits) // 20}" if digits else f"dvids:{img.stem}"
+            samples.append(
+                Sample(
+                    "dvids",
+                    _stable_split(block, (0.8, 0.1, 0.1)),
+                    img,
+                    block,
+                    (lambda b: lambda h, w: b)(boxes),
+                    [b[0] for b in boxes],
+                )
+            )
+    logger.info("dvids: %d samples", len(samples))
+    return samples
+
+
+def openimages_tank_samples(root: Path, drop_person_images: bool = True) -> List[Sample]:
+    """Open Images images that contain a Tank box (see ``fetch_datasets``).
+
+    Images with a group-of box are dropped (one box over many objects).
+    With ``drop_person_images`` images that contain a Person box are dropped
+    too: people next to tanks are mostly crews and soldiers, and labelling
+    them ``person`` would contradict the ``soldier`` labels of other sources,
+    while leaving them unlabelled would teach the detector to ignore people.
+    """
+    samples: List[Sample] = []
+    skipped: Counter = Counter()
+    for split_name, split in (("train", "train"), ("validation", "val"), ("test", "test")):
+        rows_path = root / f"{split_name}_boxes.json"
+        if not rows_path.exists():
+            continue
+        rows: Dict[str, list] = json.loads(rows_path.read_text())
+        for image_id, boxes in sorted(rows.items()):
+            img = root / split_name / f"{image_id}.jpg"
+            if not img.exists():
+                skipped["missing"] += 1
+                continue
+            if any(b[5] for b in boxes):
+                skipped["group_of"] += 1
+                continue
+            if drop_person_images and any(b[0] == "Person" for b in boxes):
+                skipped["person"] += 1
+                continue
+            class_map = (
+                OPENIMAGES_MAP
+                if drop_person_images
+                else {**OPENIMAGES_MAP, "Person": CLS["person"]}
+            )
+            out: List[Box] = []
+            for label, x1, x2, y1, y2, _ in boxes:
+                if label in class_map:
+                    clipped = _clip_box((x1 + x2) / 2, (y1 + y2) / 2, x2 - x1, y2 - y1)
+                    if clipped:
+                        out.append((class_map[label], *clipped))
+            samples.append(
+                Sample(
+                    "openimages_tank",
+                    split,
+                    img,
+                    f"openimages:{image_id}",
+                    (lambda b: lambda h, w: b)(out),
+                    [b[0] for b in out],
+                )
+            )
+    logger.info("openimages_tank: %d samples, skipped %s", len(samples), dict(skipped))
+    return samples
 
 
 def resolve_leakage(samples: List[Sample]) -> Tuple[List[Sample], int]:
@@ -545,6 +682,13 @@ def write_dataset(
     }
 
 
+V3_CAPS = "legacy=5000:400:400,visdrone=3000:400:400,aircraft=-1:-1:-1,uav_tank=-1:-1:-1"
+V4_CAPS = (
+    "legacy=5000:400:400,visdrone=-1:400:400,aircraft=-1:-1:-1,uav_tank=-1:-1:-1,"
+    "dvids=-1:-1:-1,openimages_tank=-1:-1:-1"
+)
+
+
 def parse_caps(spec: str) -> Dict[str, Tuple[int, int, int]]:
     """``"legacy=5000:400:400,visdrone=-1:-1:-1"`` -> {source: (train, val, test)}."""
     caps = {}
@@ -557,18 +701,21 @@ def parse_caps(spec: str) -> Dict[str, Tuple[int, int, int]]:
 
 def main() -> None:
     here = Path(__file__).resolve().parent
-    parser = argparse.ArgumentParser(description="Build the cleaned KAAL v3 detection dataset.")
-    parser.add_argument("--out", default=str(here / "Datasets" / "kaal_v3"))
+    parser = argparse.ArgumentParser(description="Build the cleaned KAAL detection dataset.")
+    parser.add_argument("--out", default=str(here / "Datasets" / "kaal_v4"))
     parser.add_argument(
         "--legacy", default=str(here / "runs" / "adversarial" / "augmented_dataset")
     )
     parser.add_argument("--visdrone", default=str(here / "Datasets" / "visdrone"))
     parser.add_argument("--aircraft", default=str(here / "Datasets" / "military_aircraft"))
     parser.add_argument("--uav-tank", default=str(here / "Datasets" / "simuletic_uav_tank"))
+    parser.add_argument("--dvids", default=str(here / "Datasets" / "dvids_military"))
+    parser.add_argument("--openimages-tank", default=str(here / "Datasets" / "openimages_tank"))
     parser.add_argument(
         "--caps",
-        default="legacy=5000:400:400,visdrone=3000:400:400,aircraft=-1:-1:-1,uav_tank=-1:-1:-1",
-        help="Per-source train:val:test image caps (-1 = all)",
+        default=V4_CAPS,
+        help="Per-source train:val:test image caps (-1 = all); sources not listed are skipped. "
+        f"kaal_v3 used: {V3_CAPS}",
     )
     parser.add_argument("--patch-frac", type=float, default=0.25)
     parser.add_argument(
@@ -584,6 +731,23 @@ def main() -> None:
         default=24,
         help="Legacy re-split: images within this many bits (256-bit dHash, flip-aware) "
         "are one photo (-1 = names only)",
+    )
+    parser.add_argument(
+        "--cross-dup-dist",
+        type=int,
+        default=20,
+        help="Near-duplicate grouping across ALL sources before splitting (dHash bits; "
+        "-1 disables; kaal_v3 was built without it)",
+    )
+    parser.add_argument(
+        "--keep-unlabeled-legacy",
+        action="store_true",
+        help="Keep legacy images without boxes (kaal_v3 behaviour)",
+    )
+    parser.add_argument(
+        "--keep-openimages-person",
+        action="store_true",
+        help="Keep Open Images tank photos that contain people (people -> person)",
     )
     parser.add_argument("--max-side", type=int, default=1024)
     parser.add_argument("--min-box-px", type=float, default=2.0)
@@ -607,21 +771,36 @@ def main() -> None:
             resplit=(0.8, 0.1, 0.1) if args.legacy_split == "resplit" else None,
             dup_dist=args.dup_dist,
             workers=args.workers,
+            keep_unlabeled=args.keep_unlabeled_legacy,
         ),
         "visdrone": lambda: visdrone_samples(Path(args.visdrone)),
         "aircraft": lambda: aircraft_samples(Path(args.aircraft)),
         "uav_tank": lambda: uav_tank_samples(Path(args.uav_tank)),
+        "dvids": lambda: dvids_samples(Path(args.dvids)),
+        "openimages_tank": lambda: openimages_tank_samples(
+            Path(args.openimages_tank), drop_person_images=not args.keep_openimages_person
+        ),
     }
     caps = parse_caps(args.caps)
-    selected: List[Sample] = []
-    leaked_total = 0
+    unknown = set(caps) - set(loaders)
+    if unknown:
+        parser.error(f"unknown sources in --caps: {sorted(unknown)}")
+    pool_all: List[Sample] = []
     for name, load in loaders.items():
+        if name in caps:
+            pool_all += load()
+    groups_before = len({s.group for s in pool_all})
+    if args.cross_dup_dist >= 0:
+        # One group per near-identical photo across sources (e.g. the legacy
+        # air_* images and the aircraft source share an upstream dataset).
+        pool_all = merge_near_duplicate_groups(pool_all, args.cross_dup_dist, args.workers)
+    pool_all, leaked_total = resolve_leakage(pool_all)
+    selected: List[Sample] = []
+    for name in loaders:
         if name not in caps:
             continue
-        samples, leaked = resolve_leakage(load())
-        leaked_total += leaked
         for i, split in enumerate(SPLITS):
-            pool = [s for s in samples if s.split == split]
+            pool = [s for s in pool_all if s.source == name and s.split == split]
             selected += rarity_sample(pool, caps[name][i], args.seed + i)
 
     stats = write_dataset(selected, out, args.max_side, args.min_box_px, args.workers)
@@ -629,6 +808,7 @@ def main() -> None:
         "taxonomy": list(TAXONOMY),
         "args": vars(args),
         "cross_split_duplicates_removed": leaked_total,
+        "groups_before_near_duplicate_merge": groups_before,
         "licenses": {k: v for k, v in LICENSES.items() if k in caps},
         **stats,
     }

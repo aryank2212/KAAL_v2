@@ -12,9 +12,11 @@ from MODEL.build_dataset import (
     CLS,
     LEGACY_MAP,
     Sample,
+    dvids_samples,
     legacy_samples,
     legacy_source,
     merge_near_duplicate_groups,
+    openimages_tank_samples,
     parse_caps,
     parse_visdrone_annotation,
     parse_yolo_file,
@@ -180,3 +182,63 @@ def test_near_duplicates_under_unrelated_names_share_a_group(tmp_path):
     groups = {s.image.stem: s.group for s in merge_near_duplicate_groups(samples, max_dist=10)}
     assert groups["mil_image_1"] == groups["mil_image_9"] == groups["mil_image_5"]
     assert groups["mil_image_2"] != groups["mil_image_1"]
+
+
+def test_legacy_unlabeled_images_dropped_unless_requested(tmp_path):
+    _legacy_tree(tmp_path, "train", ["mil_1", "mil_2"])
+    (tmp_path / "train" / "labels" / "mil_2.txt").write_text("")  # unannotated frame
+    kept = legacy_samples(tmp_path, patch_frac=0.0, seed=0)
+    assert [s.image.stem for s in kept] == ["mil_1"]
+    both = legacy_samples(tmp_path, patch_frac=0.0, seed=0, keep_unlabeled=True)
+    assert sorted(s.image.stem for s in both) == ["mil_1", "mil_2"]
+
+
+def test_dvids_mapping_and_event_blocks(tmp_path):
+    (tmp_path / "data.yaml").write_text(
+        "names:\n  0: soldier\n  1: tank\n  2: apc\n  3: artillery\n  4: mlrs\n"
+        "  5: military_truck\n  6: helicopter\n  7: aircraft\n  8: warship\n"
+        "  9: missile_launcher\n  10: car\n  11: truck\n"
+    )
+    (tmp_path / "train" / "images").mkdir(parents=True)
+    (tmp_path / "train" / "labels").mkdir(parents=True)
+    for stem, label in (
+        ("dvids_image_100", "0 0.5 0.5 0.1 0.2\n4 0.3 0.3 0.1 0.1\n8 0.7 0.7 0.2 0.2\n"),
+        ("dvids_image_101", "2 0.5 0.5 0.2 0.2\n"),
+        ("dvids_image_102", ""),  # labelled, no objects
+    ):
+        (tmp_path / "train" / "images" / f"{stem}.jpg").write_bytes(b"")
+        (tmp_path / "train" / "labels" / f"{stem}.txt").write_text(label)
+    (tmp_path / "train" / "images" / "dvids_image_103.jpg").write_bytes(b"")  # no label file
+
+    by_stem = {s.image.stem: s for s in dvids_samples(tmp_path)}
+    assert set(by_stem) == {"dvids_image_100", "dvids_image_101", "dvids_image_102"}
+    assert by_stem["dvids_image_100"].classes == [
+        CLS["soldier"],
+        CLS["artillery"],
+    ]  # warship dropped
+    assert by_stem["dvids_image_101"].classes == [CLS["armored_vehicle"]]
+    assert len({s.group for s in by_stem.values()}) == 1  # ids 100-102 are one upload block
+    assert len({s.split for s in by_stem.values()}) == 1
+
+
+def test_openimages_tank_filters_group_of_and_people(tmp_path):
+    rows = {
+        "a": [["Tank", 0.1, 0.5, 0.2, 0.6, 0], ["Car", 0.6, 0.9, 0.6, 0.9, 0]],
+        "b": [["Tank", 0.1, 0.5, 0.2, 0.6, 1]],  # group-of box
+        "c": [["Tank", 0.1, 0.5, 0.2, 0.6, 0], ["Person", 0.6, 0.7, 0.1, 0.9, 0]],
+    }
+    import json as _json
+
+    (tmp_path / "train_boxes.json").write_text(_json.dumps(rows))
+    (tmp_path / "train").mkdir()
+    for image_id in rows:
+        (tmp_path / "train" / f"{image_id}.jpg").write_bytes(b"")
+
+    samples = openimages_tank_samples(tmp_path)
+    assert [s.image.stem for s in samples] == ["a"]
+    assert samples[0].classes == [CLS["tank"], CLS["vehicle"]]
+    (_, cx, cy, w, h), _ = samples[0].boxes(1, 1)
+    assert (cx, cy, w, h) == pytest.approx((0.3, 0.4, 0.4, 0.4))
+    with_people = openimages_tank_samples(tmp_path, drop_person_images=False)
+    assert sorted(s.image.stem for s in with_people) == ["a", "c"]
+    assert with_people[1].classes == [CLS["tank"], CLS["person"]]  # never soldier

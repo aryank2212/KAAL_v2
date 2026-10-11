@@ -1,0 +1,279 @@
+# KAAL dataset registry — single source of truth for data lineage.
+#
+# Every dataset that was used, built, downloaded or evaluated-and-rejected is
+# listed here. Human-readable view: docs/DATASETS.md.
+# Validated by tests/test_datasets_registry.py (schema + consistency with the
+# builders). Update this file in the same commit as any data change.
+#
+# status
+#   on_disk         present under the given local_path
+#   trashed         moved to the desktop trash (recoverable until emptied);
+#                   re-create with its builder / fetch command
+#   not_on_disk     upstream source that was used historically or can be
+#                   re-downloaded; nothing local
+#   rejected        evaluated and deliberately not used (see notes)
+#   pending         planned / being produced (built datasets and models only)
+# role
+#   training_source raw source mixed into a built training dataset
+#   test_only       independent evaluation data — must never be trained on
+#   built           a dataset produced by a KAAL builder
+#   historical      upstream of the legacy KAAL set (pre-Phase-0)
+#   candidate       considered, not used
+
+schema_version: 1
+
+sources:
+  - id: legacy
+    name: Legacy KAAL adversarially augmented set
+    builder_source: legacy
+    local_path: MODEL/runs/adversarial/augmented_dataset
+    upstream: >-
+      MODEL/merge_all.py (Datasets/master_data) -> MODEL/dataset.py (+_noisy/_occlude/_patch).
+      air_* = Roboflow aircraft.v1i.yolov8; car_* = aerial_cars; mil_* = military-artillery-and-tanks
+    license: KAAL project data; mil_* upstream licence unknown
+    status: on_disk
+    role: training_source
+    size: 3.5 GB, 37,696 train / 1,461 val / 621 test images (incl. augmented variants)
+    used_in: [kaal_v3, kaal_v4]
+    known_issues:
+      - class 0 "A10" mixes cars and generic aircraft -> images carrying it are dropped
+      - no labelled tank/APC/artillery/engineering/soldier image outside train (merge_all.py put 90% of mil_* in train; the 10% val slice is 181/198 unlabeled; none in test)
+      - mil_* are mostly near-identical video frames under unrelated numbers (1,977 originals ~ 615 scenes)
+      - 254 mil_* originals have no labels (unannotated strike footage) -> dropped from kaal_v4
+      - air_* shares images with the military_aircraft source (124 near-duplicate test/train pairs across the two
+        in kaal_v3), and that source repeats images across its own splits (88 pairs) -> cross-source dedup in kaal_v4
+
+  - id: visdrone
+    name: VisDrone2019-DET
+    builder_source: visdrone
+    local_path: MODEL/Datasets/visdrone
+    upstream: gh release download v0.0.0 --repo ultralytics/assets --pattern 'VisDrone2019-DET-*.zip'
+    license: VisDrone — academic, non-commercial use
+    status: on_disk
+    role: training_source
+    size: 1.9 GB, 6,471 train / 548 val / 1,610 test-dev images
+    used_in: [kaal_v3, kaal_v4]
+    notes: pedestrian/people -> person (never soldier); kaal_v3 used 3,000 train images, kaal_v4 all
+
+  - id: military_aircraft
+    name: Military Aircraft Detection (rarity-weighted subset)
+    builder_source: aircraft
+    local_path: MODEL/Datasets/military_aircraft
+    upstream: huggingface.co/datasets/a2015003713/military-aircraft-detection-dataset (python -m MODEL.fetch_datasets aircraft)
+    license: none declared upstream (Kaggle mirror)
+    status: on_disk
+    role: training_source
+    size: 1.3 GB, 4,300 of ~25k images (3,500 / 400 / 400)
+    used_in: [kaal_v3, kaal_v4]
+    notes: rotorcraft types -> helicopter
+
+  - id: uav_tank
+    name: Simuletic UAV aerial-view battle tank (sample)
+    builder_source: uav_tank
+    local_path: MODEL/Datasets/simuletic_uav_tank
+    upstream: huggingface.co/datasets/Simuletic/UAV-Aerial-View-Battle-Tank-Detection-Dataset (python -m MODEL.fetch_datasets uav_tank)
+    license: CC BY-NC 4.0 per HF metadata (README says CC BY 4.0)
+    status: on_disk
+    role: training_source
+    size: 166 MB, 164 synthetic images
+    used_in: [kaal_v3, kaal_v4]
+
+  - id: dvids
+    name: Military-Labeled YOLO (DVIDS)
+    builder_source: dvids
+    local_path: MODEL/Datasets/dvids_military
+    upstream: huggingface.co/datasets/llama-farm/military-labeled-yolo (python -m MODEL.fetch_datasets dvids)
+    license: DVIDS imagery U.S. Government public domain; labels CC0-1.0
+    status: on_disk
+    role: training_source
+    size: 9.6 GB, 1,185 high-resolution photos
+    used_in: [kaal_v4]
+    notes: >-
+      Labels are VLM-assisted with human correction - spot-checked before training.
+      apc -> armored_vehicle; artillery/mlrs/missile_launcher -> artillery;
+      military_truck/car/truck -> vehicle; warship boxes dropped. Split 80/10/10 by
+      blocks of 20 DVIDS ids (one upload ~ one event).
+
+  - id: openimages_tank
+    name: Open Images V7 — images with a Tank box
+    builder_source: openimages_tank
+    local_path: MODEL/Datasets/openimages_tank
+    upstream: storage.googleapis.com/openimages + s3://open-images-dataset (python -m MODEL.fetch_datasets openimages_tank)
+    license: annotations CC BY 4.0; images CC BY 2.0 (per-image Flickr licence)
+    status: on_disk
+    role: training_source
+    size: ~1,300 images (train 1,062 + validation + test); 2.26 GB box CSV kept only temporarily
+    used_in: [kaal_v4]
+    notes: >-
+      Images with group-of boxes or with people are dropped (crews would conflict with the
+      soldier class); Car/Truck/Van/Bus/Motorcycle/Bicycle -> vehicle, Airplane -> aircraft.
+
+  - id: orion_web
+    name: Orion military-vehicles web images
+    builder_source: null
+    local_path: MODEL/Datasets/orion_ext/google
+    upstream: github.com/jonasrenault/orion release v1.2.0 military-vehicles-dataset.tar.gz
+    license: annotations MIT; images web-scraped (rights unclear) — local evaluation only
+    status: on_disk
+    role: test_only
+    size: 669 images (655 after de-duplication), AFV/APC/MEV/LAV
+    used_in: [kaal_ground_test]
+
+  - id: russian_military
+    name: Russian-military-annotated v4
+    builder_source: null
+    local_path: MODEL/Datasets/orion_ext/russian
+    upstream: github.com/jonasrenault/orion release v1.3.0 (Roboflow export of Tuomo Hiippala's set)
+    license: CC BY 4.0
+    status: on_disk
+    role: test_only
+    size: 1,042 files = 100 distinct photos (~10 Roboflow augmentations each); 99 used
+    used_in: [kaal_ground_test]
+
+  - id: search2
+    name: TNO Search_2
+    builder_source: null
+    local_path: MODEL/Datasets/orion_ext/search2
+    upstream: github.com/jonasrenault/orion release v1.3.0 search_2.tar.gz (figshare doi:10.6084/m9.figshare.1041463)
+    license: CC BY 4.0 (Alexander Toet)
+    status: on_disk
+    role: test_only
+    size: 44 scenes, 6144x4096, one camouflaged vehicle each at 2–5 km
+    used_in: [kaal_ground_test]
+
+  # ── historical upstreams of the legacy set ────────────────────────────
+  - id: military_artillery_and_tanks
+    name: military-artillery-and-tanks (CVAT export "2nd part int")
+    builder_source: null
+    local_path: null
+    upstream: huggingface.co/datasets/shreyas231219/military-artillery-and-tanks
+    license: unknown
+    status: not_on_disk
+    role: historical
+    notes: origin of the legacy mil_* images; merge_all.py copied it into train (and a 10% val slice that is mostly unlabeled)
+
+  - id: aircraft_v1i
+    name: Roboflow aircraft.v1i.yolov8
+    builder_source: null
+    local_path: null
+    upstream: Roboflow export used by merge_all.py (Datasets/aircraft.v1i.yolov8)
+    license: unknown (Roboflow export)
+    status: not_on_disk
+    role: historical
+    notes: origin of the legacy air_* images
+
+  - id: aerial_cars
+    name: aerial_cars
+    builder_source: null
+    local_path: null
+    upstream: Datasets/aerial_cars (merge_all.py)
+    license: unknown
+    status: not_on_disk
+    role: historical
+    notes: origin of the legacy car_* images (legacy classes 48–51 -> vehicle)
+
+  # ── evaluated and rejected ─────────────────────────────────────────────
+  - id: amod_v1
+    name: AMOD-V1.0 (Arma 3 synthetic aerial military)
+    builder_source: null
+    local_path: null
+    upstream: huggingface.co/datasets/waruislime/AMOD-V1.0
+    license: CC BY-NC 4.0
+    status: rejected
+    role: candidate
+    notes: 647 GB — too large for this machine; revisit for synthetic pre-training (docs/FUTURE_SCALING.md)
+
+  - id: drc_camouflage
+    name: DRC CARLA multi-vehicle camouflage
+    builder_source: null
+    local_path: null
+    upstream: huggingface.co/datasets/bailuyucha/differentiable-render-camouflage-data
+    license: CC BY 4.0
+    status: rejected
+    role: candidate
+    notes: 174 GB, civilian cars in CARLA; relevant to adversarial-camouflage research, not to detection training
+
+  - id: mvrsd
+    name: MVRSD military vehicle remote sensing
+    builder_source: null
+    local_path: null
+    upstream: github.com/baidongls/MVRSD
+    license: not stated
+    status: rejected
+    role: candidate
+    notes: distributed only via Baidu Cloud
+
+  - id: military_vehicles_cls
+    name: leibnitz-lab/military_vehicles
+    builder_source: null
+    local_path: null
+    upstream: huggingface.co/datasets/leibnitz-lab/military_vehicles
+    license: MIT
+    status: rejected
+    role: candidate
+    notes: classification only (no boxes); usable for a future fine-grained classifier head
+
+  - id: account_gated
+    name: Roboflow Universe / Kaggle military sets, xView, DOTA
+    builder_source: null
+    local_path: null
+    upstream: universe.roboflow.com, kaggle.com, xviewdataset.org, captain-whu.github.io/DOTA
+    license: various
+    status: rejected
+    role: candidate
+    notes: need an account / API key or registration; can be added later by the user
+
+built:
+  - id: kaal_v3
+    local_path: MODEL/Datasets/kaal_v3
+    builder: python -m MODEL.build_dataset (git 6581dc5; see module docstring for flags)
+    status: on_disk
+    sources: [legacy, visdrone, military_aircraft, uav_tank]
+    size: 11,633 train / 1,215 val / 1,216 test images, 9 classes
+    known_issues:
+      - val/test contain no armored_vehicle/artillery/engineering_vehicle/soldier
+      - 68 of 1,216 test images have a near-duplicate in train (report both raw and de-duplicated scores)
+
+  - id: kaal_v3_1
+    local_path: MODEL/Datasets/kaal_v3_1
+    builder: experimental legacy re-split
+    status: trashed
+    sources: [legacy, visdrone, military_aircraft, uav_tank]
+    notes: superseded (name-based re-split leaked 36% of legacy test images)
+
+  - id: kaal_ground_test
+    local_path: MODEL/Datasets/kaal_ground_test
+    builder: python -m MODEL.build_ground_test
+    status: on_disk
+    sources: [orion_web, russian_military, search2]
+    size: 798 test images — tank 263, armored_vehicle 428, engineering_vehicle 64, artillery 19 (+199 ignore regions)
+    notes: test only; 1 near-duplicate of kaal_v3 train excluded; rebuild with --train-ref against every new training set
+
+  - id: kaal_v4
+    local_path: MODEL/Datasets/kaal_v4
+    builder: python -m MODEL.build_dataset
+    status: pending
+    sources: [legacy, visdrone, military_aircraft, uav_tank, dvids, openimages_tank]
+    notes: cross-source near-duplicate grouping before splitting; unlabeled legacy frames dropped
+
+models:
+  - id: rfdetr-small-v3
+    arch: rfdetr-small
+    trained_on: kaal_v3
+    weights: MODEL/runs/train/rfdetr-small/checkpoint_best_total.pth
+    status: production
+    notes: 12 epochs, 1.99 h, best val mAP50:95 0.604 (RF-DETR evaluator)
+
+  - id: yolo26s-v3
+    arch: yolo26s
+    trained_on: kaal_v3
+    weights: MODEL/runs/train/yolo26s/weights/best.pt
+    status: baseline
+    notes: 30 epochs, 1.44 h; optional backend (KAAL_DETECTOR=yolo)
+
+  - id: rfdetr-small-v4
+    arch: rfdetr-small
+    trained_on: kaal_v4
+    weights: MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth
+    status: pending
+    notes: warm start from rfdetr-small-v3

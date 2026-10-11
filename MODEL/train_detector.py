@@ -12,6 +12,11 @@ Examples:
     # Matched YOLO baseline on the same data and budget
     python -m MODEL.train_detector --arch yolo26s --epochs 12
 
+    # Continue training an existing KAAL checkpoint on a newer dataset
+    python -m MODEL.train_detector --arch rfdetr-small --data MODEL/Datasets/kaal_v4 \
+        --init-weights MODEL/runs/train/rfdetr-small/checkpoint_best_total.pth \
+        --epochs 6 --name rfdetr-small-v4
+
 Outputs land in ``MODEL/runs/train/<name>``:
   RF-DETR  checkpoint_best_total.pth (inference checkpoint), metrics, tensorboard
   YOLO     weights/best.pt, results.csv, plots
@@ -38,7 +43,9 @@ def train_rfdetr(args: argparse.Namespace, out: Path) -> Dict[str, Any]:
 
     from .detectors import RFDETR_SIZES
 
-    model = getattr(rfdetr, RFDETR_SIZES[RFDETR_ARCHS[args.arch]])()
+    model_cls = getattr(rfdetr, RFDETR_SIZES[RFDETR_ARCHS[args.arch]])
+    # Warm start from a previous KAAL checkpoint (same taxonomy) instead of COCO.
+    model = model_cls(pretrain_weights=args.init_weights) if args.init_weights else model_cls()
     kwargs: Dict[str, Any] = dict(
         dataset_dir=str(args.data),
         dataset_file="yolo",
@@ -63,7 +70,7 @@ def train_rfdetr(args: argparse.Namespace, out: Path) -> Dict[str, Any]:
 def train_yolo(args: argparse.Namespace, out: Path) -> Dict[str, Any]:
     from ultralytics import YOLO
 
-    model = YOLO(YOLO_ARCHS[args.arch])
+    model = YOLO(args.init_weights or YOLO_ARCHS[args.arch])
     model.train(
         data=str(Path(args.data) / "data.yaml"),
         epochs=args.epochs,
@@ -95,10 +102,18 @@ def main() -> None:
     parser.add_argument("--workers", type=int, default=6)
     parser.add_argument("--patience", type=int, default=5)
     parser.add_argument("--name", default=None, help="Run name (default: <arch>)")
+    parser.add_argument(
+        "--init-weights",
+        default=None,
+        help="Start from this checkpoint instead of the COCO weights (fine-tune an existing "
+        "KAAL model; must match --arch)",
+    )
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     args.data = str(Path(args.data).resolve())
+    if args.init_weights:
+        args.init_weights = str(Path(args.init_weights).resolve())  # before the chdir below
     out = HERE / "runs" / "train" / (args.name or args.arch)
     out.mkdir(parents=True, exist_ok=True)
     # Both frameworks download starter weights into the CWD; keep them in one
@@ -109,6 +124,7 @@ def main() -> None:
     start = time.time()
     result = train_rfdetr(args, out) if args.arch in RFDETR_ARCHS else train_yolo(args, out)
     result.update(arch=args.arch, data=str(args.data), epochs=args.epochs,
+                  init_weights=args.init_weights,
                   train_hours=round((time.time() - start) / 3600, 2))  # fmt: skip
     (out / "kaal_train_summary.json").write_text(json.dumps(result, indent=2))
     logger.info("Done: %s", json.dumps(result))
