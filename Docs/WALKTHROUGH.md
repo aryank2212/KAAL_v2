@@ -388,3 +388,32 @@ KAAL_CAMERA_SOURCE=demo.mp4 python Frontend_Backend/backend/server.py
   roadmap items (`roadmap.md`, `FUTURE_SCALING.md`).
 * The snapshot `status` field still uses the legacy strings `ENGAGING` /
   `NOMINAL` (detections or alert present / absent); it carries no action.
+
+---
+
+## 17. Glossary
+
+| Term | Meaning in KAAL |
+|---|---|
+| **Adversarial patch** | A printed/stuck-on pattern that makes a detector miss or mislabel an object. Simulated by `adversarial_patch.py` (noise, pattern, gradient, loaded image; perspective + lighting + alpha). |
+| **Vanishing attack** | A patch that makes the object disappear from the detections — why the defense must run even on frames with no detections. |
+| **Stream 1 / 2 / 3** | Detector / FFT spectral check / temporal-consistency check. Streams 2 and 3 are model-free: they do not depend on the network being attacked. |
+| **FFT score** | Share of a crop's spectral power above a cut-off frequency (cycles/pixel). Printed noise/patterns raise it; natural optics lower it. |
+| **Temporal residual** | How far a 32×32 grid cell differs from its learned background (after removing global brightness change). |
+| **Flag rate / false-flag rate** | Share of attacked / clean inputs the defense marks as untrustworthy. The defense metric (ADR-004). |
+| **AUROC** | Threshold-free separability of clean vs attacked scores: 0.5 = chance, 1.0 = perfect. |
+| **mAP50 / mAP50:95** | COCO mean average precision at IoU 0.5 / averaged over IoU 0.5–0.95 (stricter box quality). |
+| **Any-class (agnostic) mAP** | mAP after merging the scored classes into one: did the detector find the object at all, regardless of its label? |
+| **IoU** | Intersection-over-union of two boxes. |
+| **Ignore region** | A ground-truth area (e.g. a light armoured car KAAL has no class for) where detections are neither rewarded nor penalised (COCO `iscrowd`). |
+| **DETR / RF-DETR** | Detection Transformer: predicts a fixed set of boxes directly, so no NMS post-processing. RF-DETR uses a DINOv2 (self-supervised ViT) backbone. |
+| **NMS** | Non-maximum suppression — removes overlapping duplicate boxes (YOLO needs it; RF-DETR does not). |
+| **EMA (weights)** | Exponential moving average of model weights during training; RF-DETR selects its best checkpoint from the EMA copy. |
+| **Warm start** | Initialising training from an earlier KAAL checkpoint (`--init-weights`) instead of COCO weights. |
+| **dHash** | Difference hash: a 256-bit fingerprint of an image's brightness gradients; near-identical images differ in few bits. KAAL also hashes the mirror image so flipped copies match. |
+| **Leakage** | The same (or near-identical) photo in both train and test, which inflates test scores. |
+| **Rarity sampling** | Keeping images with rare classes preferentially when capping a source (weighted sampling without replacement). |
+| **Registry** | `MODEL/datasets_registry.yaml` — which data exists, its licence, and which model used it; its `status: production` model is what the backend loads. |
+| **ONNX / ONNX Runtime** | Framework-neutral model file and the runtime that executes it without PyTorch (`.onnx` backend). |
+| **Parity test** | Scoring the exported model and the PyTorch original on the same images; export fails if mAP moves by > 0.01. |
+| **Demo mode** | Backend running without a detector (missing weights/stack): FFT, temporal cue, metrics and streams still work. |
