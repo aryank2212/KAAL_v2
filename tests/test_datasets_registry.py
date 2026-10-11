@@ -16,7 +16,7 @@ from MODEL.build_dataset import LICENSES
 REGISTRY = Path(__file__).resolve().parent.parent / "MODEL" / "datasets_registry.yaml"
 STATUSES = {"on_disk", "trashed", "not_on_disk", "rejected", "pending"}
 ROLES = {"training_source", "test_only", "built", "historical", "candidate"}
-MODEL_STATUSES = {"production", "baseline", "superseded", "pending"}
+MODEL_STATUSES = {"production", "baseline", "superseded", "pending", "rejected"}
 
 
 def _load():

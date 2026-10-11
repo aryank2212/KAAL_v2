@@ -360,9 +360,95 @@ Regressions to watch: tank on unseen photos (0.29 → 0.24), military-aircraft
 source (0.790 → 0.772), synthetic UAV tanks (0.808 → 0.774).
 
 Next, in order of expected gain per GPU-hour: (1) longer schedule (the
-curve is still rising); (2) RF-DETR-Medium / 640 px for VisDrone-scale
+curve is still rising; **tried in §8, not promoted**: no gain on unseen
+photos); (2) RF-DETR-Medium / 640 px for VisDrone-scale
 objects; (3) more distinct artillery / engineering-vehicle / APC scenes and a
 relabel pass on DVIDS; (4) TensorRT FP16 engine (`--format tensorrt`).
+
+## 8. Experiment — v5: longer schedule with a cosine tail (2026-10-12) — not promoted
+
+**Question.** v4's validation curve was still rising at epoch 10 (constant
+lr 5e-5). Does training longer on the same data improve the model?
+
+**Run.**
+- Warm start from the v4 release checkpoint, on `kaal_v4` train.
+- Learning rate 5e-5, cosine-annealed to 0.05× over 12 planned epochs
+  (`train_detector --lr-scheduler cosine`). Batch 4 × grad-accum 4,
+  3 loader workers.
+- Early stopping (patience 5, min Δ 0.001) ended the run after epoch 8,
+  at 1.87 h. The best epoch was 3 (EMA weights).
+- Release checkpoint `MODEL/runs/release/rfdetr-small-v5/rfdetr-small-v5.pth`
+  (SHA-256 `a9403260…f80e4a0`).
+- ONNX parity Δ +0.0019 mAP50:95 on 200 val images.
+
+| Epoch | 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8 |
+|---|---|---|---|---|---|---|---|---|
+| val mAP50:95 (kaal_v4 val; v4 ended at 0.462) | 0.452 | 0.463 | **0.467** | 0.463 | 0.463 | 0.464 | 0.467 | 0.463 |
+
+The first attempt froze the PC at epoch 2: 6 loader workers plus desktop
+apps exhausted the 14 GB of RAM, swap thrashing caused SSD read timeouts,
+and systemd-oomd killed the session. The restart used 3 workers and a
+memory-pressure guard. Free RAM never fell below 3.6 GB, and memory
+pressure stayed at 0. The SSD's SMART report was clean: no media errors and
+no error-log entries.
+
+**`kaal_v4` test split (1,428 images)**
+
+| Model | mAP50 | mAP50:95 | mAP50:95 attacked | Latency |
+|---|---|---|---|---|
+| rfdetr-small-v4 (production) | 0.565 | 0.405 | 0.379 | 15.4 ms |
+| rfdetr-small-v5 | 0.571 | **0.412** | 0.380 | 15.3 ms |
+
+Per class (mAP50:95):
+
+| Class | v4 | v5 | Δ |
+|---|---|---|---|
+| soldier | 0.301 | 0.330 | +0.028 |
+| artillery | 0.264 | 0.289 | +0.025 |
+| helicopter | 0.682 | 0.687 | +0.005 |
+| aircraft | 0.813 | 0.809 | −0.005 |
+| armored_vehicle | 0.052 | 0.049 | −0.003 |
+
+The other classes changed by 0.003 or less.
+
+Per source (mAP50:95): DVIDS +0.072 (0.238 → 0.310), Open Images tanks
+−0.019, aircraft +0.005, legacy −0.004, UAV −0.003, VisDrone +0.001.
+
+**`kaal_ground_test` (798 unseen photos)**
+
+| Model | mAP50 | mAP50:95 | attacked | Any-class mAP50 | Any-class mAP50:95 |
+|---|---|---|---|---|---|
+| rfdetr-small-v4 (production) | **0.172** | **0.119** | **0.121** | 0.915 | **0.672** |
+| rfdetr-small-v5 | 0.154 | 0.107 | 0.108 | **0.921** | 0.667 |
+
+Per class (mAP50:95):
+
+| Class | v4 | v5 | Δ |
+|---|---|---|---|
+| tank | 0.237 | 0.240 | +0.004 |
+| armored_vehicle | 0.210 | 0.150 | **−0.060** |
+| artillery | 0.029 | 0.037 | +0.008 |
+| engineering_vehicle | 0.001 | 0.001 | 0.000 |
+
+Every source got worse: Orion −0.019, Russian-military −0.026, Search_2 −0.020.
+
+**Decision: not promoted; v4 stays production** (registry `status: rejected`).
+v5 gains on the in-distribution split, mostly DVIDS soldiers and artillery,
+the source with the most training images of those classes. It loses on
+photos from sources it never saw, chiefly APC/IFV naming. The rule (win on
+both test sets without new regressions) is not met.
+
+**Finding.** More epochs on the same data fit the training sources better
+without improving generalisation, so v4's rising validation curve was not
+evidence of headroom on unseen imagery. The next gain must come from data
+diversity: distinct APC/IFV, artillery and engineering-vehicle scenes, and a
+DVIDS relabel pass (§7.5 item 3), or from a larger model (item 2). Not from
+a longer schedule on `kaal_v4`.
+
+Note: early stopping removed the low-learning-rate end of the cosine
+schedule, so this run does not test cosine annealing in full. The
+in-distribution/unseen split was already visible at the selected epoch,
+though, and that is what the decision rests on.
 
 ## 5. Reproduce
 
@@ -399,6 +485,21 @@ python -m MODEL.compare_detectors --data MODEL/Datasets/kaal_v4 \
     --detector rfdetr-small-v4=MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth \
     --out MODEL/runs/compare_v4
 python -m MODEL.export_model --parity 200
+
+# v5 experiment (§8; not promoted)
+python -m MODEL.train_detector --arch rfdetr-small --data MODEL/Datasets/kaal_v4 \
+    --init-weights MODEL/runs/release/rfdetr-small-v4/rfdetr-small-v4.pth \
+    --epochs 12 --lr 5e-5 --lr-scheduler cosine --lr-min-factor 0.05 --workers 3 \
+    --patience 5 --name rfdetr-small-v5
+python -m MODEL.publish_model strip --src MODEL/runs/train/rfdetr-small-v5/checkpoint_best_total.pth \
+    --dst MODEL/runs/release/rfdetr-small-v5/rfdetr-small-v5.pth
+python -m MODEL.compare_detectors --data MODEL/Datasets/kaal_v4 \
+    --detector rfdetr-small-v4=MODEL/runs/release/rfdetr-small-v4/rfdetr-small-v4.pth \
+    --detector rfdetr-small-v5=MODEL/runs/release/rfdetr-small-v5/rfdetr-small-v5.pth --out MODEL/runs/compare_v5
+python -m MODEL.compare_detectors --data MODEL/Datasets/kaal_ground_test \
+    --eval-classes tank,armored_vehicle,artillery,engineering_vehicle --agnostic \
+    --detector rfdetr-small-v4=MODEL/runs/release/rfdetr-small-v4/rfdetr-small-v4.pth \
+    --detector rfdetr-small-v5=MODEL/runs/release/rfdetr-small-v5/rfdetr-small-v5.pth --out MODEL/runs/compare_ground_v5
 
 # mAP matrix requires torch/ultralytics (GPU-gated); weights in MODEL/*.pt
 python -m MODEL.benchmark --images <images> --labels <labels> \

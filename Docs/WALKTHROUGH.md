@@ -272,12 +272,18 @@ Why each rule exists — the data problems found in Phase 4.5 — is in
 * RF-DETR: `model.train(dataset_dir, dataset_file="yolo", epochs,
   batch_size=4, grad_accum_steps=4, lr, early_stopping, checkpoint_interval,
   tensorboard)`; output `MODEL/runs/train/<name>/checkpoint_best_total.pth`.
-  `--init-weights` warm-starts from a previous KAAL checkpoint.
+  `--init-weights` warm-starts from a previous KAAL checkpoint;
+  `--lr-scheduler cosine --lr-min-factor F` anneals the learning rate to F × lr
+  (default `step`: RF-DETR's 10× drop after 100 epochs, i.e. constant for
+  short fine-tunes); `--workers` sets the data-loader processes.
 * YOLO: Ultralytics `train` with batch = batch × grad_accum.
 * The process `chdir`s into `MODEL/runs/weights/` so framework downloads land
   in one ignored cache; `kaal_train_summary.json` records arch, data, epochs,
   init weights and wall time.
-* Hardware used: RTX 4060 Laptop (8 GB). RF-DETR-S ≈ 10 img/s at batch 4.
+* Hardware used: RTX 4060 Laptop (8 GB, 14 GB system RAM). RF-DETR-S ≈ 19 img/s
+  end-to-end at batch 4 × grad-accum 4 (≈ 15–17 min per kaal_v4 epoch).
+  Use `--workers 3` on this machine. With 6 workers plus desktop apps, the
+  RAM ran out and the PC froze (2026-10-12, RESULTS §8).
 
 ---
 
@@ -423,6 +429,7 @@ KAAL_CAMERA_SOURCE=demo.mp4 python Frontend_Backend/backend/server.py
 | Temporal fires constantly on a moving camera | the cue assumes a static view | `KAAL_TEMPORAL=0` for moving platforms until ego-motion compensation lands (FUTURE_SCALING §2) |
 | Too many per-box FFT flags on foliage / gravel | threshold not calibrated for this camera | `python -m MODEL.calibration --labels …` → `KAAL_CALIBRATION=<profile.json>` |
 | RF-DETR training OOM on 8 GB | batch too large | `--batch 2 --grad-accum 8` (same effective batch) |
+| PC freezes during training; journal shows `systemd-oomd` killing the session and NVMe read timeouts | system RAM exhausted (data-loader workers × augmentation buffers + desktop apps) → swap thrash on the SSD | `--workers 3`, close the browser; guard the run by stopping it when `/proc/pressure/memory` `some avg10` stays ≥ 30; after a crash check `git fsck`, the registry SHA-256s and the dataset files |
 | `export_model --parity` exits 1 | exported graph disagrees with PyTorch by > 0.01 mAP50:95 | do not deploy that file; re-export (opset / precision) and re-run parity |
 | A `docs/` folder appears next to `Docs/` | `core.ignorecase=true` on a case-sensitive disk | keep all documentation in `Docs/` |
 | `fetch_weights`: "Access not granted yet" | the Hub repo is gated and this account has not accepted the terms | open the model page, accept the conditions (approval is automatic), `hf auth login`, rerun |

@@ -4,7 +4,19 @@
 
 ---
 
-## Status: ✅ COMPLETE (Phase 0–4) + ✅ Phase 4.5 (review fixes, RF-DETR, kaal_v3 dataset) + ✅ Phase 4.6 (model decision, data audit, kaal_v4, docs) + ✅ Phase 4.7 (model release on the Hugging Face Hub)
+## Status: ✅ COMPLETE (Phase 0–4) + ✅ Phase 4.5 (review fixes, RF-DETR, kaal_v3 dataset) + ✅ Phase 4.6 (model decision, data audit, kaal_v4, docs) + ✅ Phase 4.7 (model release on the Hugging Face Hub) + ✅ Phase 4.8 (v5 longer-schedule experiment — not promoted)
+
+### Phase 4.8 — v5 longer-schedule experiment (2026-10-12) — not promoted
+
+- [x] `train_detector --lr-scheduler step|cosine --lr-min-factor`, recorded in `kaal_train_summary.json`; `tests/test_train_detector.py`.
+- [x] `rfdetr-small-v5`: warm start from v4, lr 5e-5 cosine, early-stopped at epoch 8 (best epoch 3), 1.87 h.
+- [x] **Results** (`MODEL/RESULTS.md` §8): kaal_v4 test 0.405 → 0.412, but unseen ground vehicles 0.119 → 0.107 (APC/IFV 0.210 → 0.150, every source down).
+- [x] **Not promoted:** v4 stays production. v5 is registered as `rejected` and is not published to the Hub.
+- [x] **Finding:** more epochs on the same data only fit the training sources better. The next lever is data diversity (APC/IFV, artillery and engineering-vehicle scenes, DVIDS relabel) or a larger model.
+- [x] **First attempt froze the PC:** 6 loader workers plus desktop apps exhausted the 14 GB of RAM; swap thrash caused NVMe read timeouts and systemd-oomd killed the session.
+  - Recovery: integrity verified (git fsck; registry SHA-256s; all 38,886 kaal_v4 files read back), and the SSD's SMART report was clean.
+  - Rerun: 3 workers and a memory-pressure guard. Free RAM never fell below 3.6 GB.
+  - Documented in the WALKTHROUGH troubleshooting table.
 
 ### Phase 4.7 — Model release on the Hugging Face Hub (2026-10-12)
 
