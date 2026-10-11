@@ -1,7 +1,7 @@
 """
 test_server.py — Integration test for the FastAPI backend.
 
-Starts the app (with a stubbed YOLO so no model file/GPU is required), hits
+Starts the app with the stock YOLO weights (stubbed when Ultralytics is absent), hits
 `/api/python-data`, and verifies the JSON schema the frontend consumes.
 
 Mirrors the Phase 2 roadmap requirement:
@@ -23,19 +23,21 @@ SERVER_PATH = Path(__file__).resolve().parents[2] / "Frontend_Backend" / "backen
 
 @pytest.fixture(scope="module")
 def client():
-    import os
+    with pytest.MonkeyPatch.context() as mp:
+        # Never touch the real camera. Pin the stock YOLO weights (stubbed when
+        # Ultralytics is absent) instead of the registry's production model,
+        # so the test never depends on trained weights being on disk.
+        mp.setenv("KAAL_ENABLE_CAMERA", "0")
+        mp.setenv("KAAL_MODEL_PATH", str(SERVER_PATH.parents[2] / "MODEL" / "yolov8m.pt"))
+        spec = importlib.util.spec_from_file_location("kaal_server_under_test", SERVER_PATH)
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[spec.name] = module
+        spec.loader.exec_module(module)
 
-    # Never touch the real camera in tests.
-    os.environ["KAAL_ENABLE_CAMERA"] = "0"
-    spec = importlib.util.spec_from_file_location("kaal_server_under_test", SERVER_PATH)
-    module = importlib.util.module_from_spec(spec)
-    sys.modules[spec.name] = module
-    spec.loader.exec_module(module)
+        from fastapi.testclient import TestClient
 
-    from fastapi.testclient import TestClient
-
-    with TestClient(module.app) as c:
-        yield c
+        with TestClient(module.app) as c:
+            yield c
 
 
 def test_python_data_schema(client):

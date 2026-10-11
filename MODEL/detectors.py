@@ -15,6 +15,10 @@ Backends
           YOLO at equal latency. Loads ``checkpoint_best_total.pth`` files
           written by ``python -m MODEL.train_detector --arch rfdetr-*``.
 
+RF-DETR is the production detector (docs/DECISIONS.md, ADR-001); YOLO is an
+optional backend. ``production_weights()`` resolves the weights of the model
+marked ``status: production`` in ``MODEL/datasets_registry.yaml``.
+
 Heavy frameworks are imported lazily so model-free code (FFT scoring,
 calibration, tests) never pays for torch.
 """
@@ -24,6 +28,10 @@ from typing import Any, Dict, List, Optional, Protocol
 
 import cv2
 import numpy as np
+import yaml
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+REGISTRY = Path(__file__).resolve().parent / "datasets_registry.yaml"
 
 RFDETR_SIZES = {
     "nano": "RFDETRNano",
@@ -120,6 +128,19 @@ class RFDETRDetector:
                 }
             )
         return out
+
+
+def production_weights(registry: Path = REGISTRY) -> Optional[Path]:
+    """Weights of the registry model with ``status: production``, if they exist on disk."""
+    try:
+        models = (yaml.safe_load(registry.read_text()) or {}).get("models", [])
+    except (OSError, yaml.YAMLError):
+        return None
+    for model in models:
+        if model.get("status") == "production" and model.get("weights"):
+            path = REPO_ROOT / model["weights"]
+            return path if path.exists() else None
+    return None
 
 
 def infer_backend(weights: Optional[str]) -> str:

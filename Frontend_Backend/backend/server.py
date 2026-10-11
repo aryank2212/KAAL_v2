@@ -24,7 +24,9 @@ Configuration (environment variables)
                               (default http://localhost:5173,http://127.0.0.1:5173)
     KAAL_API_TOKEN            if set, PUT /api/settings requires header X-KAAL-Token
     KAAL_DETECTOR             yolo | rfdetr | auto (default auto: from weights suffix)
-    KAAL_MODEL_PATH           weights (.pt -> YOLO, .pth/.ckpt -> RF-DETR)
+    KAAL_MODEL_PATH           weights (.pt -> YOLO, .pth/.ckpt -> RF-DETR); default: the
+                              production RF-DETR in MODEL/datasets_registry.yaml if
+                              present on disk, else MODEL/yolov8m.pt (COCO), else demo
     KAAL_RFDETR_SIZE          nano | small | medium (COCO weights when no path given)
     KAAL_CAMERA_SOURCE        video file / stream URL instead of a webcam (files loop)
     KAAL_CAMERA_INDEX, KAAL_ENABLE_CAMERA, KAAL_CONF, KAAL_FFT_THRESHOLD,
@@ -67,7 +69,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[2]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 from MODEL.calibration import load_calibrated_threshold  # noqa: E402
-from MODEL.detectors import infer_backend, load_detector  # noqa: E402
+from MODEL.detectors import infer_backend, load_detector, production_weights  # noqa: E402
 from MODEL.fft_scorer import (  # noqa: E402
     DEFAULT_FFT_THRESHOLD as MODEL_DEFAULT_FFT_THRESHOLD,
     compute_fft_anomaly_score,
@@ -110,7 +112,10 @@ CAMERA_INDEX = _env_int("KAAL_CAMERA_INDEX", 0)
 CAMERA_SOURCE: int | str = _env_str("KAAL_CAMERA_SOURCE", "") or CAMERA_INDEX
 SOURCE_IS_FILE = isinstance(CAMERA_SOURCE, str) and Path(CAMERA_SOURCE).is_file()
 ENABLE_CAMERA = _env_bool("KAAL_ENABLE_CAMERA", True)
-MODEL_PATH = _env_str("KAAL_MODEL_PATH", str(_REPO_ROOT / "MODEL" / "yolov8m.pt"))
+# Production RF-DETR (registry) -> stock COCO YOLO -> demo mode (DetectorAdapter).
+MODEL_PATH = _env_str(
+    "KAAL_MODEL_PATH", str(production_weights() or _REPO_ROOT / "MODEL" / "yolov8m.pt")
+)
 DETECTOR_BACKEND = _env_str("KAAL_DETECTOR", "auto").lower()
 RFDETR_SIZE = _env_str("KAAL_RFDETR_SIZE", "small")
 CALIBRATION_PROFILE = _env_str("KAAL_CALIBRATION", "")

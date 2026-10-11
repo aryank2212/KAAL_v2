@@ -5,7 +5,13 @@ test_detectors.py — Detector adapter contract (no torch needed).
 import numpy as np
 import pytest
 
-from MODEL.detectors import RFDETRDetector, UltralyticsDetector, as_detector, infer_backend
+from MODEL.detectors import (
+    production_weights,
+    RFDETRDetector,
+    UltralyticsDetector,
+    as_detector,
+    infer_backend,
+)
 
 
 class _FakeRFDETRModel:
@@ -82,3 +88,25 @@ class TestAsDetector:
         assert as_detector(det) is det
         with pytest.raises(TypeError):
             as_detector(object())
+
+
+class TestProductionWeights:
+    def test_resolves_production_model_on_disk(self, tmp_path, monkeypatch):
+        import MODEL.detectors as det
+
+        monkeypatch.setattr(det, "REPO_ROOT", tmp_path)
+        (tmp_path / "w").mkdir()
+        (tmp_path / "w" / "best.pth").write_bytes(b"x")
+        reg = tmp_path / "registry.yaml"
+        reg.write_text(
+            "models:\n"
+            "  - {id: old, status: baseline, weights: w/old.pt}\n"
+            "  - {id: new, status: production, weights: w/best.pth}\n"
+        )
+        assert det.production_weights(reg) == tmp_path / "w" / "best.pth"
+
+    def test_missing_weights_or_registry_give_none(self, tmp_path):
+        reg = tmp_path / "registry.yaml"
+        reg.write_text("models:\n  - {id: new, status: production, weights: nope.pth}\n")
+        assert production_weights(reg) is None
+        assert production_weights(tmp_path / "absent.yaml") is None
