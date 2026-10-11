@@ -25,6 +25,9 @@ from .dual_stream_defense import DualStreamDefense
 
 logger = logging.getLogger(__name__)
 
+# Base seed for patch injection; identical across attacked/defended passes.
+ATTACK_SEED = 1234
+
 
 class RobustnessEvaluator:
     """
@@ -157,7 +160,7 @@ class RobustnessEvaluator:
         total_anomaly_scores = []
         total_objects_flagged = 0
 
-        for img_name in image_files:
+        for idx, img_name in enumerate(image_files):
             img_path = os.path.join(images_dir, img_name)
             label_path = os.path.join(labels_dir, Path(img_name).stem + ".txt")
 
@@ -181,6 +184,9 @@ class RobustnessEvaluator:
 
             # Apply adversarial attack if requested
             if apply_attack and bboxes:
+                # Seed per image so the attacked and defended passes see the
+                # *same* patches — otherwise their mAP gap is just patch noise.
+                np.random.seed(ATTACK_SEED + idx)
                 image, _ = self.injector.apply_patch(image, bboxes, prob=1.0)
 
             # Run inference
@@ -396,8 +402,14 @@ class RobustnessEvaluator:
             report.append(f"\n  mAP drop from attack: {drop:+.4f}")
 
         if "adversarial" in self.results and "defended" in self.results:
-            recovery = self.results["defended"]["mAP50"] - self.results["adversarial"]["mAP50"]
-            report.append(f"  mAP recovery with defense: {recovery:+.4f}")
+            # The dual-stream defense *flags* tampered inputs; it does not alter
+            # detections, so defended mAP equals attacked mAP on identical
+            # patches. The defense metric is the flag rate reported above.
+            delta = self.results["defended"]["mAP50"] - self.results["adversarial"]["mAP50"]
+            report.append(
+                f"  Defended vs attacked mAP: {delta:+.4f} (expected 0 — the defense flags, "
+                "it does not correct; see flag rate)"
+            )
 
         report.append(f"\n{'=' * 60}\n")
 

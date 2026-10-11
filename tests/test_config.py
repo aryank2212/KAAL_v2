@@ -7,6 +7,7 @@ Verifies sensible defaults and that validation catches bad values.
 import pytest
 
 from MODEL.config import Config, DefenseMode, PatchType
+from MODEL.fft_scorer import DEFAULT_FFT_THRESHOLD
 
 
 class TestDefaults:
@@ -15,7 +16,7 @@ class TestDefaults:
         assert c.patch_scale_range == (0.05, 0.5)
         assert c.patch_alpha == 0.8
         assert c.fft_threshold is None
-        assert c.fft_default_threshold == 0.3
+        assert c.fft_default_threshold == DEFAULT_FFT_THRESHOLD
         assert c.fft_high_freq_ratio == 0.25
         assert c.fft_region_mode is True
         assert c.fft_region_min_size == 16

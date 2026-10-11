@@ -287,6 +287,11 @@ runs/adversarial/
 
 ## Example Output
 
+Report format (numbers are illustrative). The dual-stream defense **flags**
+tampered inputs — it does not modify detections — so on identical patches the
+defended mAP equals the attacked mAP; the defense metric is the flag rate.
+Real measured numbers live in `MODEL/RESULTS.md` and `runs/compare/report.md`.
+
 ```
 ============================================================
   ROBUSTNESS EVALUATION REPORT
@@ -296,12 +301,12 @@ runs/adversarial/
   ---------------------------+---------+-----+----+---
   Clean (baseline)           | 0.7823  | 245 | 32 | 18
   Adversarial (no defense)   | 0.4156  | 128 | 89 | 135
-  Adversarial + Defense      | 0.6891  | 210 | 45 | 53
+  Adversarial + Defense      | 0.4156  | 128 | 89 | 135
 
   Adversarial images flagged: 42/50
-  Mean anomaly score: 0.4521
-  Max anomaly score: 0.7834
+  Mean anomaly score: 0.1521
+  Max anomaly score: 0.4834
 
   mAP drop from attack: -0.3667
-  mAP recovery with defense: +0.2735
+  Defended vs attacked mAP: +0.0000 (expected 0 — the defense flags, it does not correct; see flag rate)
 ```

@@ -316,7 +316,7 @@ class BenchmarkRunner:
         detector:   Optional detector implementing `predict(image) -> [dict]`.
                     When None, only the model-free FFT detectability matrix is
                     produced.
-        fft_threshold:   FFT flagging threshold (default 0.3).
+        fft_threshold:   FFT flagging threshold (default: calibrated p99 of clean samples).
         high_freq_ratio: FFT high-frequency band fraction.
         n_images:  Number of sorted images to sample.
         seed:      Random seed for attack reproducibility.

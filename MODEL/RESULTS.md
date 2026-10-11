@@ -4,6 +4,68 @@ Generated with `MODEL/failure_analysis.py` and `MODEL/benchmark.py` on a synthet
 evaluation set (blurred-noise scenes with a synthetic object box, YOLO labels).
 Artifacts: `runs/failure_analysis/`, `runs/benchmark/`.
 
+> **Note (2026-10-11):** Sections 1–4 below were measured with the original
+> `log1p`-magnitude FFT scorer, which was later found to track crop *shape*
+> rather than content (§0). They are kept for the record; §0 and §6 supersede
+> them. Re-run with the commands in §5.
+
+## 0. FFT scorer fix — shape bias removed (2026-10-11)
+
+The original score (`log1p|F|` energy outside a circle of radius
+`min(h, w)·(1−r)/2` in index space) had two defects:
+
+* **Shape bias.** Same photo, same centre, different crop shape:
+
+  | Crop | 240×240 | 480×120 | 120×480 | 600×100 | 640×480 |
+  |------|---------|---------|---------|---------|---------|
+  | old score | 0.496 | 0.857 | 0.866 | 0.905 | 0.607 |
+  | new score | 0.074 | 0.069 | 0.069 | 0.068 | 0.079 |
+
+  Per-box scoring therefore flagged every tall/wide detection (people,
+  vehicles) at the old server default of 0.5.
+* **No content signal.** At a fixed 240×240 size the old score was 0.532 for a
+  smooth blur, 0.496 for a real photo and 0.558 for pure white noise — the
+  last equals the pixel-area fraction of the band (0.558): `log1p` flattened
+  the spectrum until the ratio was essentially geometry.
+
+The new score is the share of AC spectral **power** above
+`0.5·(1−high_freq_ratio)` cycles/pixel, computed on a mean-removed,
+Hann-windowed crop (smooth 0.009 · photo 0.074 · white noise 0.555).
+
+**Real photos** (44 photos, 264 random crops 80–400 px of any aspect, the
+repo's own noise / pattern patch injector):
+
+| Scorer | AUROC vs noise patch | AUROC vs pattern patch | clean p99 |
+|---|---|---|---|
+| old (`log1p`, r=0.25) | 0.591 | 0.533 | 0.857 |
+| **new (power, r=0.25)** | **0.890** | **0.846** | 0.086 |
+| new, r=0.40 | 0.876 | 0.839 | 0.160 |
+| new, r=0.50 | 0.859 | 0.824 | 0.250 |
+| new, r=0.75 | 0.798 | 0.801 | 0.518 |
+
+`high_freq_ratio=0.25` stays the default; the fallback threshold
+`DEFAULT_FFT_THRESHOLD` is now one shared constant (previously 0.3 in the
+model and 0.5 in the server).
+
+**Synthetic failure analysis, re-run with the new scorer**
+(`python -m MODEL.failure_analysis --n 40 --seed 0 --region 64`, threshold =
+p99 of smooth "sky"):
+
+| | old scorer | new scorer |
+|---|---|---|
+| gaussian_noise_high_freq detection | 0.200 | **1.000** |
+| low_freq_noise / universal_low_freq | 0.000 / 0.000 | 0.075 / 0.000 |
+| FPR foliage / urban / rain | 0.43 / 0.00 / 0.00 | 1.00 / 1.00 / 1.00 |
+| temporal cue: low_freq / universal (clean FPR) | 1.00 / 0.68 (0.00) | 1.00 / 0.65 (0.00) |
+
+Read this carefully: the synthetic "foliage" is per-pixel random speckle and
+"urban"/"rain" are 1-px aliased lines — spectrally they *are* noise patches,
+with power right up to Nyquist that real optics/demosaicing/JPEG remove. The
+old scorer only looked better on them because it barely separated anything.
+The honest conclusion is the one §4 already drew: calibrate per camera with
+challenging clean frames, score per box, and fuse the temporal cue. The
+decisive measurement is per-box scoring on real imagery (§6).
+
 ## 1. Failure analysis (detector-free)
 
 Settings: 40 images per natural texture, `high_freq_ratio=0.25`,
@@ -90,6 +152,16 @@ honest negative result.
 - Add the temporal residual to catch low-frequency attacks (1.0 / 0.675).
 - Calibrate per environment including "challenging clean" frames (foliage, rain).
 
+## 6. Detector comparison — RF-DETR vs YOLO26 on `kaal_v3` (2026-10-11)
+
+*Pending: the overnight run is in progress (`MODEL/runs/train/pipeline.log`).*
+Protocol: both detectors fine-tuned from COCO weights on the same `kaal_v3`
+train split (≈11.6k images, 9 classes) with effective batch 16 —
+RF-DETR-Small for 12 epochs, YOLO26s for 30 epochs (≈ equal GPU time on an
+RTX 4060 Laptop GPU, 8 GB). Evaluated by `python -m MODEL.compare_detectors`
+on the held-out test split, clean and with a noise/pattern patch inside every
+ground-truth box; full tables in `runs/compare/report.md`.
+
 ## 5. Reproduce
 
 ```bash
@@ -99,6 +171,14 @@ python -m MODEL.failure_analysis --n 40 --seed 0 --region 64
 # benchmark matrix (threshold auto-calibrated from clean images at p99)
 python -m MODEL.benchmark --images <images> --labels <labels> \
     --output runs/benchmark --n-images 30 --seed 42
+
+# detector comparison (needs the `ml` extra + a GPU)
+python -m MODEL.build_dataset
+python -m MODEL.train_detector --arch rfdetr-small --epochs 12
+python -m MODEL.train_detector --arch yolo26s --epochs 30
+python -m MODEL.compare_detectors \
+    --detector rfdetr-small=MODEL/runs/train/rfdetr-small/checkpoint_best_total.pth \
+    --detector yolo26s=MODEL/runs/train/yolo26s/weights/best.pt
 
 # mAP matrix requires torch/ultralytics (GPU-gated); weights in MODEL/*.pt
 python -m MODEL.benchmark --images <images> --labels <labels> \

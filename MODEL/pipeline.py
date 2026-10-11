@@ -124,7 +124,7 @@ def main():
         "--fft-threshold",
         type=float,
         default=None,
-        help="FFT anomaly threshold (default: calibration profile or 0.3)",
+        help="FFT anomaly threshold (default: calibration profile or MODEL.fft_scorer.DEFAULT_FFT_THRESHOLD)",
     )
     parser.add_argument(
         "--high-freq-ratio",
