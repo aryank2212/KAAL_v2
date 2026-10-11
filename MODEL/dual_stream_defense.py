@@ -1,12 +1,16 @@
 """
 dual_stream_defense.py — FFT-based dual-stream adversarial defense.
 
-Stream 1: Standard YOLO detection.
+Stream 1: Object detection (YOLO or RF-DETR, see ``MODEL/detectors.py``).
 Stream 2: Frequency-domain anomaly detection using 2D FFT.
+Stream 3 (optional, video): temporal-consistency cue that catches
+          low-frequency perturbations the FFT cannot see.
 
 Fusion: If the high-frequency anomaly score exceeds a threshold, the image
 (or an individual detection, in per-region mode) is flagged as adversarially
-perturbed and predictions are annotated with a warning.
+perturbed and predictions are annotated with a warning. When a temporal cue
+is attached, a frame is also flagged if its residual against the learned
+background exceeds the cue's threshold.
 
 Per-region mode (Phase 1): each detection is scored on its own bbox crop so
 individual objects are flagged rather than entire frames.
@@ -15,21 +19,21 @@ individual objects are flagged rather than entire frames.
 import numpy as np
 from typing import List, Dict, Any, Tuple, Optional
 
-from ultralytics import YOLO
-
-from .fft_scorer import compute_fft_anomaly_score
+from .fft_scorer import DEFAULT_FFT_THRESHOLD, compute_fft_anomaly_score
 from .calibration import load_calibrated_threshold
+from .detectors import as_detector
+from .temporal_scorer import StreamingTemporalCue
 
 
 class DualStreamDefense:
     """
-    Two-stream inference pipeline combining YOLO detection with
-    FFT-based adversarial patch detection.
+    Inference pipeline combining object detection with FFT-based adversarial
+    patch detection (and an optional temporal cue for video streams).
     """
 
     def __init__(
         self,
-        model: YOLO,
+        model: Any,
         fft_threshold: Optional[float] = None,
         high_freq_ratio: float = 0.25,
         conf_threshold: float = 0.25,
@@ -37,16 +41,18 @@ class DualStreamDefense:
         region_min_size: int = 16,
         overlap_iou: float = 0.5,
         calibration_profile: Optional[str] = None,
+        temporal_cue: Optional[StreamingTemporalCue] = None,
     ):
         """
         Args:
-            model:               Trained YOLO model for Stream 1.
+            model:               Stream 1 detector: a ``MODEL.detectors`` detector
+                                 (YOLO / RF-DETR) or a raw Ultralytics model.
             fft_threshold:       Anomaly score above which a region/image is
                                  flagged adversarial. None → use calibration
-                                 profile (if given) or default 0.3.
+                                 profile (if given) or DEFAULT_FFT_THRESHOLD.
             high_freq_ratio:     Fraction of the frequency spectrum considered
                                  "high-frequency".
-            conf_threshold:      Confidence threshold for YOLO predictions.
+            conf_threshold:      Confidence threshold for detector predictions.
             region_mode:         Score each detection on its own bbox crop
                                  (per-object flags) instead of whole frames only.
             region_min_size:     Skip FFT on detections smaller than this many
@@ -55,8 +61,13 @@ class DualStreamDefense:
                                  exceeds this reuse its score (dedupe overlaps).
             calibration_profile: Path to a JSON calibration profile whose
                                  threshold replaces the hardcoded default.
+            temporal_cue:        Optional streaming temporal cue. Only meaningful
+                                 when ``predict`` is fed consecutive frames of one
+                                 (static) scene; call ``reset_temporal`` on cuts.
         """
         self.model = model
+        self.detector = as_detector(model)
+        self.temporal_cue = temporal_cue
         self.high_freq_ratio = high_freq_ratio
         self.conf_threshold = conf_threshold
         self.region_mode = region_mode
@@ -66,39 +77,24 @@ class DualStreamDefense:
         if fft_threshold is None:
             fft_threshold = load_calibrated_threshold(
                 profile_path=calibration_profile,
-                fallback=0.3,
+                fallback=DEFAULT_FFT_THRESHOLD,
                 high_freq_ratio=high_freq_ratio,
             )
         self.fft_threshold = fft_threshold
 
-    # ── Stream 1: YOLO Detection ──────────────────────────────────────────
+    # ── Stream 1: Object detection ────────────────────────────────────────
 
-    def yolo_predict(self, image: np.ndarray) -> List[Dict[str, Any]]:
-        """
-        Run standard YOLO inference on a single image.
-        Tuned to reduce fragmented detections (merging parts into whole).
-        """
-        results = self.model.predict(
-            source=image,
-            conf=self.conf_threshold,
-            iou=0.45,  # Higher IOU threshold to keep only strong boxes
-            agnostic_nms=True,  # Merge overlapping boxes across different class labels
-            verbose=False,
-        )
-        detections = []
-        for result in results:
-            boxes = result.boxes
-            if boxes is None:
-                continue
-            for i in range(len(boxes)):
-                det = {
-                    "bbox": boxes.xyxy[i].cpu().numpy().tolist(),
-                    "confidence": float(boxes.conf[i].cpu()),
-                    "class_id": int(boxes.cls[i].cpu()),
-                    "class_name": result.names[int(boxes.cls[i].cpu())],
-                }
-                detections.append(det)
-        return detections
+    def detect(self, image: np.ndarray) -> List[Dict[str, Any]]:
+        """Run the Stream 1 detector on a single BGR image."""
+        return self.detector.predict(image, conf=self.conf_threshold)
+
+    # Backwards-compatible name used by the evaluator / benchmark harnesses.
+    yolo_predict = detect
+
+    def reset_temporal(self) -> None:
+        """Forget the temporal background (call on scene cuts / camera moves)."""
+        if self.temporal_cue is not None:
+            self.temporal_cue.reset()
 
     # ── Stream 2: FFT Anomaly Detection ───────────────────────────────────
 
@@ -149,16 +145,17 @@ class DualStreamDefense:
 
         Returns:
             Dict with keys:
-              - detections: list of YOLO detection dicts, each augmented with
+              - detections: list of detection dicts, each augmented with
                             `anomaly_score` (float or None for unscored) and
                             `is_adversarial` (bool).
               - anomaly_score: whole-image FFT score.
               - is_adversarial: True if the image OR any object is flagged.
               - objects_flagged: number of individually-flagged detections.
+              - temporal: temporal-cue result dict (``None`` without a cue).
               - defense_action: str describing what the defense did.
         """
-        # Stream 1: YOLO detection
-        detections = self.yolo_predict(image)
+        # Stream 1: object detection
+        detections = self.detect(image)
 
         # Stream 2: whole-image FFT score
         anomaly_score = self.compute_anomaly_score(image)
@@ -172,19 +169,28 @@ class DualStreamDefense:
                 if det.get("is_adversarial"):
                     objects_flagged += 1
 
-        is_adversarial = anomaly_score > self.fft_threshold or objects_flagged > 0
+        # Stream 3: temporal consistency (video only)
+        temporal = self.temporal_cue.observe(image) if self.temporal_cue is not None else None
+        temporal_flag = bool(temporal and temporal["flagged"])
+
+        is_adversarial = anomaly_score > self.fft_threshold or objects_flagged > 0 or temporal_flag
 
         if is_adversarial:
+            temporal_note = (
+                f", temporal={temporal['score']:.4f} > {temporal['threshold']:.4f}"
+                if temporal_flag and temporal is not None
+                else ""
+            )
             defense_action = (
-                f"⚠ ADVERSARIAL DETECTED (score={anomaly_score:.3f} > "
-                f"threshold={self.fft_threshold:.3f}, objects_flagged={objects_flagged}). "
-                f"Predictions may be unreliable."
+                f"⚠ ADVERSARIAL DETECTED (score={anomaly_score:.3f}, "
+                f"threshold={self.fft_threshold:.3f}, objects_flagged={objects_flagged}"
+                f"{temporal_note}). Predictions may be unreliable."
             )
         else:
             defense_action = (
                 f"✓ Clean image (score={anomaly_score:.3f} ≤ "
                 f"threshold={self.fft_threshold:.3f}). "
-                f"Trusting YOLO predictions."
+                f"Trusting detector predictions."
             )
 
         return {
@@ -192,6 +198,7 @@ class DualStreamDefense:
             "anomaly_score": anomaly_score,
             "is_adversarial": is_adversarial,
             "objects_flagged": objects_flagged,
+            "temporal": temporal,
             "defense_action": defense_action,
         }
 

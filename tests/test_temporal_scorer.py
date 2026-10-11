@@ -109,3 +109,118 @@ class TestValidation:
         det.reset()
         assert not det.initialized
         assert det.score(_clean_frames(1)[0]) == 0.0
+
+
+# ── StreamingTemporalCue (live-video fusion) ─────────────────────────────
+
+from MODEL.temporal_scorer import StreamingTemporalCue  # noqa: E402
+from MODEL.augmentations import add_low_freq_noise  # noqa: E402
+
+
+def _scene(rng, base):
+    """Static scene + per-frame sensor noise."""
+    noise = rng.normal(0, 2.0, base.shape)
+    return np.clip(base.astype(np.float32) + noise, 0, 255).astype(np.uint8)
+
+
+def _base_scene(seed=0):
+    rng = np.random.RandomState(seed)
+    return cv2.GaussianBlur(rng.randint(0, 255, (120, 160, 3), dtype=np.uint8), (21, 21), 0)
+
+
+class TestStreamingTemporalCue:
+    def test_warmup_calibrates_then_stays_quiet_on_clean_stream(self):
+        rng = np.random.RandomState(1)
+        base = _base_scene()
+        cue = StreamingTemporalCue(warmup_frames=20)
+        results = [cue.observe(_scene(rng, base)) for _ in range(80)]
+        assert not results[0]["ready"]
+        assert cue.ready and cue.threshold is not None
+        assert sum(r["flagged"] for r in results) == 0
+
+    def test_flags_persistent_low_freq_perturbation(self):
+        """Gated updates keep a persistent attack visible (not absorbed by the EMA)."""
+        rng = np.random.RandomState(2)
+        base = _base_scene()
+        cue = StreamingTemporalCue(warmup_frames=20, max_flagged_frames=1000)
+        for _ in range(40):
+            cue.observe(_scene(rng, base))
+        np.random.seed(5)
+        attacked = add_low_freq_noise(base)
+        flags = [cue.observe(_scene(rng, attacked))["flagged"] for _ in range(60)]
+        assert all(flags[5:]), "persistent perturbation must stay flagged"
+
+    def test_rebaselines_after_long_flag_run(self):
+        rng = np.random.RandomState(3)
+        cue = StreamingTemporalCue(warmup_frames=10, max_flagged_frames=15)
+        for _ in range(20):
+            cue.observe(_scene(rng, _base_scene(0)))
+        new_scene = _base_scene(9)  # camera moved: a genuinely different scene
+        for _ in range(16):
+            cue.observe(_scene(rng, new_scene))
+        assert cue.rebaselines == 1
+        assert not cue.ready  # re-calibrating on the new scene
+
+    def test_fixed_threshold_skips_calibration(self):
+        rng = np.random.RandomState(4)
+        cue = StreamingTemporalCue(threshold=0.5)
+        cue.observe(_scene(rng, _base_scene()))
+        assert cue.ready and cue.threshold == 0.5
+
+    def test_rejects_tiny_warmup(self):
+        with pytest.raises(ValueError):
+            StreamingTemporalCue(warmup_frames=1)
+
+
+class TestStreamingTemporalLocalization:
+    """The live cue must catch a small fixed patch, not moving objects or lighting."""
+
+    def _warm(self, cue, rng, base, n=25):
+        for _ in range(n):
+            cue.observe(_scene(rng, base))
+        assert cue.ready
+
+    def test_small_static_patch_is_flagged(self):
+        rng = np.random.RandomState(10)
+        base = cv2.resize(_base_scene(), (640, 480))
+        cue = StreamingTemporalCue(warmup_frames=20)
+        self._warm(cue, rng, base)
+        patched = base.copy()
+        patched[200:240, 300:340] = np.random.RandomState(0).randint(
+            0, 256, (40, 40, 3)
+        )  # 0.5% of frame
+        flags = [cue.observe(_scene(rng, patched))["flagged"] for _ in range(20)]
+        assert not any(flags[:3]) and all(flags[5:])
+
+    def test_moving_object_is_not_flagged(self):
+        rng = np.random.RandomState(11)
+        base = cv2.resize(_base_scene(), (640, 480))
+        cue = StreamingTemporalCue(warmup_frames=20)
+        self._warm(cue, rng, base)
+        flags = []
+        for t in range(40):
+            frame = base.copy()
+            x = 20 + t * 14  # a 30 px "car" crossing the frame
+            frame[300:330, x : x + 30] = 30
+            flags.append(cue.observe(_scene(rng, frame))["flagged"])
+        assert not any(flags)
+
+    def test_global_brightness_change_is_not_flagged(self):
+        rng = np.random.RandomState(12)
+        base = cv2.resize(_base_scene(), (640, 480))
+        cue = StreamingTemporalCue(warmup_frames=20)
+        self._warm(cue, rng, base)
+        brighter = np.clip(base.astype(np.int16) + 25, 0, 255).astype(np.uint8)
+        flags = [cue.observe(_scene(rng, brighter))["flagged"] for _ in range(20)]
+        assert not any(flags)
+
+    def test_long_lived_local_change_is_absorbed(self):
+        rng = np.random.RandomState(13)
+        base = cv2.resize(_base_scene(), (640, 480))
+        cue = StreamingTemporalCue(warmup_frames=20, max_flagged_frames=12)
+        self._warm(cue, rng, base)
+        parked = base.copy()
+        parked[100:160, 100:180] = 20
+        flags = [cue.observe(_scene(rng, parked))["flagged"] for _ in range(30)]
+        assert any(flags[5:12]) and not any(flags[15:])
+        assert cue.rebaselines >= 1 and cue.ready  # local absorb, not a full reset
