@@ -348,7 +348,7 @@ python -m MODEL.build_ground_test --train-ref MODEL/Datasets/kaal_v4/train/image
 # train (production recipe)
 python -m MODEL.train_detector --arch rfdetr-small --data MODEL/Datasets/kaal_v4 \
     --init-weights MODEL/runs/train/rfdetr-small/checkpoint_best_total.pth \
-    --epochs 6 --lr 5e-5 --name rfdetr-small-v4
+    --epochs 10 --lr 5e-5 --name rfdetr-small-v4
 
 # evaluate
 python -m MODEL.compare_detectors --data MODEL/Datasets/kaal_v4 \

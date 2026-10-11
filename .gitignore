@@ -116,3 +116,6 @@ AirSim_Environment/Blocks/
 # Git
 .git/
 *.orig
+
+# Tool caches
+.serena/

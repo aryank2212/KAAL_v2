@@ -106,7 +106,7 @@ python -m MODEL.build_dataset            # -> MODEL/Datasets/kaal_v4 (+ manifest
 # production recipe: continue the RF-DETR checkpoint on kaal_v4
 python -m MODEL.train_detector --arch rfdetr-small --data MODEL/Datasets/kaal_v4 \
     --init-weights MODEL/runs/train/rfdetr-small/checkpoint_best_total.pth \
-    --epochs 6 --lr 5e-5 --name rfdetr-small-v4
+    --epochs 10 --lr 5e-5 --name rfdetr-small-v4
 # from scratch (COCO weights) / YOLO baseline
 python -m MODEL.train_detector --arch rfdetr-small --epochs 12
 python -m MODEL.train_detector --arch yolo26s --epochs 30

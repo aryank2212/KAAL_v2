@@ -15,7 +15,7 @@ Examples:
     # Continue training an existing KAAL checkpoint on a newer dataset
     python -m MODEL.train_detector --arch rfdetr-small --data MODEL/Datasets/kaal_v4 \
         --init-weights MODEL/runs/train/rfdetr-small/checkpoint_best_total.pth \
-        --epochs 6 --name rfdetr-small-v4
+        --epochs 10 --lr 5e-5 --name rfdetr-small-v4
 
 Outputs land in ``MODEL/runs/train/<name>``:
   RF-DETR  checkpoint_best_total.pth (inference checkpoint), metrics, tensorboard
