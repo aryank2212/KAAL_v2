@@ -1,3 +1,5 @@
+// Controls — start / stop the live pipeline view (isRunning), quick model-label
+// buttons, and the real CPU load from the backend's systemMetrics.
 import { useState } from "react";
 import { motion } from "motion/react";
 

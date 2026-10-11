@@ -1,3 +1,5 @@
+// SystemStatus (exported as HealthMonitor) — health bars for CPU, GPU,
+// memory, latency and bandwidth from the backend's 1 Hz MetricsSampler.
 import { motion } from "motion/react";
 
 // Decorative star field, generated once at module load (not during render).

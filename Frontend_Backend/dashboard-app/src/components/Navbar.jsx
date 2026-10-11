@@ -1,3 +1,5 @@
+// Navbar — top bar: clock / date, pipeline state and network throughput
+// (systemMetrics.bandwidth, KB/s).
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 

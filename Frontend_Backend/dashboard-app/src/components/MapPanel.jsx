@@ -1,3 +1,6 @@
+// MapPanel — Leaflet map (OpenStreetMap tiles) with a fixed marker.
+// Not mounted by App yet: kept for the geo-referenced detection view planned
+// in Docs/FUTURE_SCALING.md (§3 geo-localisation, §7 dashboard).
 import { MapContainer, TileLayer, Marker } from "react-leaflet";
 import "leaflet/dist/leaflet.css";
 

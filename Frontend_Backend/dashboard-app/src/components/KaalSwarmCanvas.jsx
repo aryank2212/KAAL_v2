@@ -1,3 +1,7 @@
+// KaalSwarmCanvas — canvas animation of the boids swarm (lib/SwarmEngine.js:
+// separation / alignment / cohesion) and its threats; reports swarm
+// telemetry to the parent through onTelemetry. Simulation only — not driven
+// by the detector.
 import { useEffect, useRef } from 'react';
 import * as Engine from '../lib/SwarmEngine';
 

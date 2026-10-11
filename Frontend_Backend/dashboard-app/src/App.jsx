@@ -1,3 +1,10 @@
+// App.jsx — root of the KAAL tactical dashboard.
+// Owns the run/stop state, the (cosmetic) model label and the live settings.
+// Everything else is derived from the latest backend snapshot delivered by
+// useDefenseSocket (WebSocket /ws, REST polling fallback): video feed,
+// detections, alert state (audio beep on alert onset), graphs and system
+// metrics. Threshold / confidence changes go to PUT /api/settings, with an
+// X-KAAL-Token header when VITE_KAAL_API_TOKEN is set.
 import { useState, useEffect, useCallback } from "react";
 import Sidebar from "./components/Sidebar";
 import Navbar from "./components/Navbar";

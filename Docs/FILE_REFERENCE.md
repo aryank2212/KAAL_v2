@@ -139,8 +139,9 @@ Trained KAAL weights are **not** committed (size); they live under
 | `src/components/MultiGraph.jsx`, `GraphPanel.jsx` | core | Time series: FFT score, % boxes flagged, temporal residual ×100. |
 | `src/components/SettingsPanel.jsx` | core | Threshold (0–0.5, step 0.005, default 0.08) and confidence controls. |
 | `src/components/StatusBar.jsx` | core | Connection, FPS, latency, TEMPORAL and DETECTOR status. |
-| `src/components/Controls.jsx`, `SystemStatus.jsx`, `Navbar.jsx`, `Sidebar.jsx` | core | CPU/GPU/network panels (real metrics) and navigation. |
-| `src/components/MapPanel.jsx` | core | Leaflet map (OpenStreetMap tiles) with a fixed marker — no live positions yet. |
+| `src/components/Controls.jsx`, `SystemStatus.jsx`, `Navbar.jsx` | core | Start/stop, CPU/GPU/memory/latency/network panels (real metrics from the backend), clock. |
+| `src/components/Sidebar.jsx` | core | Navigation and mini metrics. Its model list (QUANTUM-V1 / HELIX-V2 / ATLAS-V3) is a cosmetic label only — the real detector is chosen on the backend (`KAAL_DETECTOR` / `KAAL_MODEL_PATH`) and shown in the StatusBar DETECTOR item. |
+| `src/components/MapPanel.jsx` | research | Leaflet map (OpenStreetMap tiles) with a fixed marker. **Not mounted by `App.jsx`** — kept for the planned geo-referenced detection view (FUTURE_SCALING §3, §7). |
 | `src/App.css`, `src/index.css` | core | Styles. |
 
 ## `SCRIPTS/` — simulation demos (AirSim)

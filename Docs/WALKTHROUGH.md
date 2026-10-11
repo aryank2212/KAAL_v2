@@ -219,12 +219,16 @@ module docstring and README.
   backoff (1 s → 10 s max); polling stops when the socket is back.
 * **State:** `App.jsx` derives everything from the latest snapshot (no
   duplicated state); alert onset is detected during render.
-* **Views:** video + detections + alert banner (`MainPanel`), FFT score /
-  % boxes flagged / temporal ×100 graphs (`MultiGraph`), live threshold and
-  confidence controls (`SettingsPanel`, threshold 0–0.5 in 0.005 steps,
-  default 0.08), status bar with TEMPORAL and DETECTOR, real CPU/GPU/network
-  panels, Leaflet map (`MapPanel`), boids swarm canvas (`KaalSwarmCanvas` +
-  `SwarmEngine.js`).
+* **Views:** `MainPanel` shows the annotated MJPEG feed with detection tags
+  and a pulsing border on alert, or — via its toggle — the boids swarm
+  simulation (`KaalSwarmCanvas` + `SwarmEngine.js`); FFT score / % boxes
+  flagged / temporal ×100 graphs (`MultiGraph`, `GraphPanel`); live threshold
+  and confidence controls (`SettingsPanel`, threshold 0–0.5 in 0.005 steps,
+  default 0.08); status bar with FLAGS, NOISE, THRESH, TEMPORAL and DETECTOR;
+  real CPU/GPU/memory/latency/network panels.
+* **Not wired yet:** `MapPanel` (Leaflet) is not mounted, and the sidebar's
+  model list (QUANTUM-V1 / HELIX-V2 / ATLAS-V3) is a cosmetic label — the
+  detector is selected on the backend.
 
 ---
 

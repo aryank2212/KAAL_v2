@@ -1,3 +1,6 @@
+// StatusBar — live readouts: flagged boxes, frame FFT score vs threshold,
+// temporal cue (OFF / CALIB / residual), DETECTOR backend, connection state
+// and CPU / GPU / memory / latency / uptime from systemMetrics.
 import { motion } from "motion/react";
 
 export default function StatusBar({
