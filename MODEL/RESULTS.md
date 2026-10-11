@@ -64,7 +64,24 @@ with power right up to Nyquist that real optics/demosaicing/JPEG remove. The
 old scorer only looked better on them because it barely separated anything.
 The honest conclusion is the one §4 already drew: calibrate per camera with
 challenging clean frames, score per box, and fuse the temporal cue. The
-decisive measurement is per-box scoring on real imagery (§6).
+decisive measurement is per-box scoring on real imagery:
+
+**Per-box calibration on real imagery (`kaal_v3`).** 14,542 clean ground-truth
+boxes on val (`python -m MODEL.calibration --labels ...`): p50 0.024, p95
+0.095, p99 0.159. On 3,987 test boxes, clean vs the same box with a
+noise/pattern patch (perspective + lighting applied, as printed patches are):
+
+| Threshold | Patched boxes flagged | Clean boxes falsely flagged |
+|---|---|---|
+| 0.080 (default, ≈ p93) | 28.8% | 5.4% |
+| 0.095 (p95) | 21.0% | 3.2% |
+| 0.159 (p99) | 4.8% | 0.4% |
+
+Threshold-free AUROC is **0.74** — lower than the 0.89 of the photo-crop
+study: many real boxes are tiny (VisDrone) and the injected patch is blurred
+by the perspective warp. Per-box FFT alone is a weak signal on real data;
+on a static camera the per-cell temporal cue is the stronger one (live demo:
+residual 0.284 vs threshold 0.01 for a patch covering ~0.5% of the frame).
 
 ## 1. Failure analysis (detector-free)
 

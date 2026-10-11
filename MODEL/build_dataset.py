@@ -19,9 +19,18 @@ Sources
              KAAL set). Images that contain legacy class 0 ("A10") are
              DROPPED: that class is a catch-all that mixes generic aircraft
              and cars (see MODEL/RESULTS.md). ``_noisy`` variants are dropped
-             (the originals already carry Roboflow noise), and ``_patch``
-             variants are kept for a fraction of training groups only, so
-             augmented copies of one photo never straddle two splits.
+             (the originals already carry Roboflow noise), augmented variants
+             are kept in train only (``_patch`` for a fraction of photos), and
+             val/test keep one image per photo.
+             Caveat: the set's own val/test folders hold only aircraft and
+             cars — every tank, APC/IFV, artillery, engineering vehicle and
+             soldier is in train, and those ``mil_image_*`` files are mostly
+             near-identical video frames under unrelated names.
+             ``--legacy-split resplit`` re-splits by *content* group
+             (flip-aware 256-bit dHash, ``--dup-dist``) stratified on the
+             rarest class, but true duplicates reach ~24 bits, and at that
+             distance soldier/engineering collapse to a handful of scenes —
+             too few for a meaningful held-out test (MODEL/RESULTS.md §6).
   visdrone   VisDrone2019-DET (drone viewpoint). Pedestrians/people map to
              ``person`` — never ``soldier``: civilians must not be conflated
              with combatants. Ignored regions (category 0 / score 0) and
@@ -41,14 +50,16 @@ import hashlib
 import json
 import logging
 import random
+import re
 import shutil
 from collections import Counter, defaultdict
 from concurrent.futures import ThreadPoolExecutor
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 from typing import Callable, Dict, Iterable, List, Optional, Sequence, Tuple
 
 import cv2
+import numpy as np
 import yaml
 
 logger = logging.getLogger(__name__)
@@ -122,6 +133,7 @@ class Sample:
     # pixel-coordinate sources need the real image size.
     boxes: Callable[[int, int], List[Box]]
     classes: List[int] = field(default_factory=list)  # for rarity sampling
+    augmented: bool = False  # synthetic variant of another image (train only)
 
 
 # ── label helpers ────────────────────────────────────────────────────────
@@ -198,22 +210,124 @@ def _stable_split(key: str, fractions=(0.7, 0.15, 0.15)) -> str:
 # ── source adapters ──────────────────────────────────────────────────────
 
 
-def legacy_samples(root: Path, patch_frac: float, seed: int) -> List[Sample]:
+_AUG_SUFFIX = re.compile(r"_(noisy|occlude|patch)$")
+_ROBOFLOW_HASH = re.compile(r"(_jpg|_jpeg|_png)?\.rf\.[0-9a-f]+$")
+
+
+def legacy_source(stem: str) -> str:
+    """Source-photo key: strip KAAL augmentation suffixes and Roboflow export hashes."""
+    return _ROBOFLOW_HASH.sub("", _AUG_SUFFIX.sub("", stem))
+
+
+def dhash(path: Path, size: int = 16) -> Optional[Tuple[np.ndarray, np.ndarray]]:
+    """256-bit difference hash of an image and of its horizontal mirror."""
+    gray = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
+    if gray is None:
+        return None
+    g = cv2.resize(gray, (size + 1, size), interpolation=cv2.INTER_AREA)
+    m = g[:, ::-1]
+    return np.packbits(g[:, 1:] > g[:, :-1]), np.packbits(m[:, 1:] > m[:, :-1])
+
+
+_POPCOUNT = np.array([bin(i).count("1") for i in range(256)], dtype=np.uint8)
+
+
+def near_duplicate_pairs(
+    hashes: np.ndarray, mirrored: np.ndarray, max_dist: int, block: int = 256
+) -> Iterable[Tuple[int, int]]:
+    """Index pairs (i < j) whose hashes differ in at most ``max_dist`` bits."""
+    for start in range(0, len(hashes), block):
+        q = hashes[start : start + block, None, :]
+        dist = np.minimum(
+            _POPCOUNT[q ^ hashes[None]].sum(2, dtype=np.uint16),
+            _POPCOUNT[q ^ mirrored[None]].sum(2, dtype=np.uint16),
+        )
+        for i, j in zip(*np.nonzero(dist <= max_dist)):
+            if start + i < j:
+                yield int(start + i), int(j)
+
+
+def merge_near_duplicate_groups(
+    samples: List[Sample], max_dist: int, workers: int = 8
+) -> List[Sample]:
+    """Union the groups of near-identical images (flip-aware dHash).
+
+    The legacy ``mil_image_*`` files are Roboflow exports in which copies of
+    one photo carry unrelated sequential numbers, so names alone cannot group
+    them.
+    """
+    reps = [s for s in samples if not s.augmented]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        hashed = [(s, h) for s, h in zip(reps, pool.map(lambda s: dhash(s.image), reps)) if h]
+    parent = {s.group: s.group for s in samples}
+
+    def find(g: str) -> str:
+        while parent[g] != g:
+            parent[g] = parent[parent[g]]
+            g = parent[g]
+        return g
+
+    if hashed:
+        plain = np.stack([h[0] for _, h in hashed])
+        mirrored = np.stack([h[1] for _, h in hashed])
+        for i, j in near_duplicate_pairs(plain, mirrored, max_dist):
+            a, b = find(hashed[i][0].group), find(hashed[j][0].group)
+            if a != b:
+                parent[max(a, b)] = min(a, b)
+    merged = [replace(s, group=find(s.group)) for s in samples]
+    logger.info(
+        "near-duplicate grouping: %d name groups -> %d content groups",
+        len({s.group for s in samples}),
+        len({s.group for s in merged}),
+    )
+    return merged
+
+
+def stratified_group_split(
+    samples: List[Sample], fractions: Tuple[float, float, float], seed: int
+) -> List[Sample]:
+    """Reassign splits by group, stratified on each group's rarest class.
+
+    Every class with at least a handful of groups lands in val and test, and
+    all samples of a group share one split.
+    """
+    freq = Counter(c for s in samples for c in s.classes)
+    members: Dict[str, set] = defaultdict(set)
+    for s in samples:
+        members[s.group].update(s.classes)
+    strata: Dict[int, List[str]] = defaultdict(list)
+    for group, classes in members.items():
+        strata[min(classes, key=lambda c: (freq[c], c)) if classes else -1].append(group)
+
     rng = random.Random(seed)
+    home: Dict[str, str] = {}
+    for key in sorted(strata):
+        groups = sorted(strata[key])
+        rng.shuffle(groups)
+        n_test = round(len(groups) * fractions[2])
+        n_val = round(len(groups) * fractions[1])
+        for i, group in enumerate(groups):
+            home[group] = "test" if i < n_test else "val" if i < n_test + n_val else "train"
+    return [replace(s, split=home[s.group]) for s in samples]
+
+
+def legacy_samples(
+    root: Path,
+    patch_frac: float,
+    seed: int,
+    resplit: Optional[Tuple[float, float, float]] = None,
+    dup_dist: int = 24,
+    workers: int = 8,
+) -> List[Sample]:
     samples: List[Sample] = []
     dropped = 0
-    split_dirs = {"train": "train", "val": "val", "test": "test"}
-    for split, sub in split_dirs.items():
-        img_dir, lbl_dir = root / sub / "images", root / sub / "labels"
+    for split in SPLITS:
+        img_dir, lbl_dir = root / split / "images", root / split / "labels"
         if not img_dir.is_dir():
             continue
         for img in sorted(img_dir.iterdir()):
             stem = img.stem
             if stem.endswith("_noisy"):
-                continue
-            is_patch = stem.endswith("_patch")
-            group = stem[: -len("_patch")] if is_patch else stem
-            if is_patch and (split != "train" or rng.random() >= patch_frac):
                 continue
             boxes = parse_yolo_file(lbl_dir / f"{stem}.txt", LEGACY_MAP)
             if boxes is None:
@@ -224,13 +338,35 @@ def legacy_samples(root: Path, patch_frac: float, seed: int) -> List[Sample]:
                     "legacy",
                     split,
                     img,
-                    f"legacy:{group}",
+                    f"legacy:{legacy_source(stem)}",
                     (lambda b: lambda h, w: b)(boxes),
                     [b[0] for b in boxes],
+                    augmented=bool(_AUG_SUFFIX.search(stem)),
                 )
             )
-    logger.info("legacy: %d samples, %d images dropped (unreliable class 0)", len(samples), dropped)
-    return samples
+    if resplit is not None:
+        if dup_dist >= 0:
+            samples = merge_near_duplicate_groups(samples, dup_dist, workers)
+        samples = stratified_group_split(samples, resplit, seed)
+
+    rng = random.Random(seed)
+    kept: List[Sample] = []
+    seen_eval_groups: set = set()
+    for s in samples:
+        if s.split == "train":
+            if s.image.stem.endswith("_patch") and rng.random() >= patch_frac:
+                continue
+            kept.append(s)
+        elif not s.augmented and s.group not in seen_eval_groups:
+            seen_eval_groups.add(s.group)  # one image per photo in val/test
+            kept.append(s)
+    logger.info(
+        "legacy: %d samples (%s split), %d images dropped (unreliable class 0)",
+        len(kept),
+        "stratified re-" if resplit else "original",
+        dropped,
+    )
+    return kept
 
 
 def visdrone_samples(root: Path) -> List[Sample]:
@@ -435,6 +571,20 @@ def main() -> None:
         help="Per-source train:val:test image caps (-1 = all)",
     )
     parser.add_argument("--patch-frac", type=float, default=0.25)
+    parser.add_argument(
+        "--legacy-split",
+        choices=["resplit", "original"],
+        default="original",
+        help="resplit = stratified 80/10/10 by content group (the original val/test "
+        "folders contain no ground vehicles or soldiers; see module docstring)",
+    )
+    parser.add_argument(
+        "--dup-dist",
+        type=int,
+        default=24,
+        help="Legacy re-split: images within this many bits (256-bit dHash, flip-aware) "
+        "are one photo (-1 = names only)",
+    )
     parser.add_argument("--max-side", type=int, default=1024)
     parser.add_argument("--min-box-px", type=float, default=2.0)
     parser.add_argument("--seed", type=int, default=0)
@@ -450,7 +600,14 @@ def main() -> None:
         shutil.rmtree(out)
 
     loaders = {
-        "legacy": lambda: legacy_samples(Path(args.legacy), args.patch_frac, args.seed),
+        "legacy": lambda: legacy_samples(
+            Path(args.legacy),
+            args.patch_frac,
+            args.seed,
+            resplit=(0.8, 0.1, 0.1) if args.legacy_split == "resplit" else None,
+            dup_dist=args.dup_dist,
+            workers=args.workers,
+        ),
         "visdrone": lambda: visdrone_samples(Path(args.visdrone)),
         "aircraft": lambda: aircraft_samples(Path(args.aircraft)),
         "uav_tank": lambda: uav_tank_samples(Path(args.uav_tank)),

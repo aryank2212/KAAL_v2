@@ -31,9 +31,9 @@ import cv2
 import numpy as np
 
 # Fallback anomaly threshold used when no calibration profile is supplied.
-# Measured as the 99th percentile of clean natural/drone imagery with the
-# power-ratio score (see MODEL/RESULTS.md); always prefer a calibrated value
-# for a specific camera (``python -m MODEL.calibration``).
+# ~p93 of clean ground-truth boxes on kaal_v3 val (5.4% false flags, 29% of
+# patched boxes flagged on test; MODEL/RESULTS.md §0). Always prefer a value
+# calibrated for the actual camera: ``python -m MODEL.calibration --labels``.
 DEFAULT_FFT_THRESHOLD = 0.08
 
 # Smallest side (pixels) that still yields a meaningful spectrum.

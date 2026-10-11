@@ -67,7 +67,7 @@ def render(
     )
 
     h, w = image.shape[:2]
-    writer = cv2.VideoWriter(str(out), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
+    writer = cv2.VideoWriter(str(out), cv2.VideoWriter.fourcc(*"mp4v"), fps, (w, h))
     frames = 0
     for base, secs in ((image, seconds[0]), (attacked, seconds[1]), (image, seconds[2])):
         for _ in range(int(secs * fps)):

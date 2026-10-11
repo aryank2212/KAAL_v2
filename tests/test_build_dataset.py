@@ -12,12 +12,16 @@ from MODEL.build_dataset import (
     CLS,
     LEGACY_MAP,
     Sample,
+    legacy_samples,
+    legacy_source,
+    merge_near_duplicate_groups,
     parse_caps,
     parse_visdrone_annotation,
     parse_yolo_file,
     pixel_boxes_to_yolo,
     rarity_sample,
     resolve_leakage,
+    stratified_group_split,
     write_dataset,
 )
 
@@ -100,3 +104,79 @@ def test_write_dataset_resizes_and_writes_yaml(tmp_path):
     assert stats["images"] == {"train/visdrone": 1}
     assert "names" in (out / "data.yaml").read_text()
     json.dumps(stats)  # manifest-serializable
+
+
+def test_legacy_source_groups_all_copies_of_one_photo():
+    base = "air_0003f5_jpg"
+    assert legacy_source(f"{base}.rf.2b6a03") == "air_0003f5"
+    assert legacy_source(f"{base}.rf.73270a_noisy") == "air_0003f5"
+    assert legacy_source(f"{base}.rf.2b6a03_patch") == "air_0003f5"
+    assert legacy_source("mil_image_2723_occlude") == "mil_image_2723"
+    assert legacy_source("mil_image_2723") == "mil_image_2723"
+
+
+def test_stratified_split_puts_rare_classes_in_val_and_test():
+    # Mimics the legacy set: the rare class exists only in "train".
+    pool = [_s("train", f"common{i}", (0,)) for i in range(300)]
+    pool += [_s("train", f"rare{i}", (0, 6)) for i in range(30)]
+    pool += [_s("train", "rare0", (6,))]  # second copy of one rare photo
+    out = stratified_group_split(pool, (0.8, 0.1, 0.1), seed=0)
+
+    rare = [s for s in out if 6 in s.classes]
+    assert {s.split for s in rare} == {"train", "val", "test"}
+    assert len({s.group for s in rare if s.split == "test"}) == 3  # 10% of 30 photos
+    homes = {}
+    for s in out:
+        assert homes.setdefault(s.group, s.split) == s.split  # groups never straddle
+
+
+def _legacy_tree(root, split, stems, cls=41):
+    (root / split / "images").mkdir(parents=True, exist_ok=True)
+    (root / split / "labels").mkdir(parents=True, exist_ok=True)
+    for stem in stems:
+        (root / split / "images" / f"{stem}.jpg").write_bytes(b"")
+        (root / split / "labels" / f"{stem}.txt").write_text(f"{cls} 0.5 0.5 0.2 0.2\n")
+
+
+def test_legacy_resplit_keeps_augmented_copies_in_train_only(tmp_path):
+    stems = []
+    for i in range(40):
+        stems += [f"mil_{i}", f"mil_{i}_noisy", f"mil_{i}_occlude", f"mil_{i}_patch"]
+    _legacy_tree(tmp_path, "train", stems)
+    samples = legacy_samples(tmp_path, patch_frac=1.0, seed=0, resplit=(0.8, 0.1, 0.1))
+
+    assert not any(s.image.stem.endswith("_noisy") for s in samples)
+    evals = [s for s in samples if s.split != "train"]
+    assert len(evals) == 8  # 10% + 10% of 40 photos, one image each
+    assert not any(s.augmented for s in evals)
+    eval_groups = {s.group for s in evals}
+    assert not any(s.group in eval_groups for s in samples if s.split == "train")
+
+
+def test_legacy_original_split_is_kept_on_request(tmp_path):
+    _legacy_tree(tmp_path, "train", [f"t{i}" for i in range(10)])
+    _legacy_tree(tmp_path, "test", ["x0", "x0_occlude"], cls=1)
+    samples = legacy_samples(tmp_path, patch_frac=0.0, seed=0)
+    assert sorted((s.split, s.image.stem) for s in samples if s.split == "test") == [("test", "x0")]
+    assert sum(s.split == "train" for s in samples) == 10
+
+
+def test_near_duplicates_under_unrelated_names_share_a_group(tmp_path):
+    rng = np.random.default_rng(0)
+    photo = cv2.GaussianBlur(rng.integers(0, 255, (120, 160, 3), dtype=np.uint8), (9, 9), 0)
+    other = cv2.GaussianBlur(rng.integers(0, 255, (120, 160, 3), dtype=np.uint8), (9, 9), 0)
+    images = {
+        "mil_image_1": photo,
+        "mil_image_9": np.clip(photo.astype(int) + 12, 0, 255).astype(np.uint8),  # brighter copy
+        "mil_image_5": photo[:, ::-1],  # mirrored copy
+        "mil_image_2": other,
+    }
+    samples = []
+    for stem, img in images.items():
+        path = tmp_path / f"{stem}.jpg"
+        cv2.imwrite(str(path), img)
+        samples.append(Sample("legacy", "train", path, f"legacy:{stem}", lambda h, w: [], [2]))
+
+    groups = {s.image.stem: s.group for s in merge_near_duplicate_groups(samples, max_dist=10)}
+    assert groups["mil_image_1"] == groups["mil_image_9"] == groups["mil_image_5"]
+    assert groups["mil_image_2"] != groups["mil_image_1"]

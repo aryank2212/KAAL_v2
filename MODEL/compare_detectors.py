@@ -26,7 +26,7 @@ import logging
 import statistics
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 import cv2
 import numpy as np
@@ -91,27 +91,42 @@ def coco_map(
     dets: List[List[Dict[str, Any]]],
     sizes: List[Tuple[int, int]],
     class_names: List[str],
+    eval_classes: Optional[Sequence[int]] = None,
+    ignores: Optional[List[List[Tuple[int, List[float]]]]] = None,
 ) -> Dict[str, Any]:
+    """COCO mAP. ``eval_classes`` restricts scoring (other-class detections are
+    dropped); ``ignores`` are regions where detections are neither TP nor FP."""
     from pycocotools.coco import COCO
     from pycocotools.cocoeval import COCOeval
 
+    cats = sorted(eval_classes) if eval_classes is not None else list(range(len(class_names)))
     gt_json: Dict[str, Any] = {
         "images": [{"id": i, "height": h, "width": w} for i, (h, w) in enumerate(sizes)],
-        "categories": [{"id": c, "name": n} for c, n in enumerate(class_names)],
+        "categories": [{"id": c, "name": class_names[c]} for c in cats],
         "annotations": [],
     }
+
+    def _add(img_id: int, c: int, box: List[float], crowd: int) -> None:
+        x, y, bw, bh = box
+        gt_json["annotations"].append(
+            {
+                "id": len(gt_json["annotations"]) + 1,
+                "image_id": img_id,
+                "category_id": c,
+                "bbox": [x, y, bw, bh],
+                "area": bw * bh,
+                "iscrowd": crowd,
+            }
+        )
+
     for img_id, boxes in enumerate(gts):
-        for c, (x, y, bw, bh) in boxes:
-            gt_json["annotations"].append(
-                {
-                    "id": len(gt_json["annotations"]) + 1,
-                    "image_id": img_id,
-                    "category_id": c,
-                    "bbox": [x, y, bw, bh],
-                    "area": bw * bh,
-                    "iscrowd": 0,
-                }
-            )
+        for c, box in boxes:
+            if c in cats:
+                _add(img_id, c, box, 0)
+    for img_id, boxes in enumerate(ignores or []):
+        for _, box in boxes:
+            for c in cats:  # an ignore region applies to every scored class
+                _add(img_id, c, box, 1)
     dt_json = [
         {
             "image_id": img_id,
@@ -126,7 +141,7 @@ def coco_map(
         }
         for img_id, ds in enumerate(dets)
         for d in ds
-        if 0 <= d["class_id"] < len(class_names)
+        if d["class_id"] in cats
     ]
     if not dt_json:
         return {"mAP50": 0.0, "mAP50_95": 0.0, "per_class_mAP50_95": {}}
@@ -150,9 +165,9 @@ def coco_map(
         return float(p.mean()) if p.size else 0.0
 
     per_class = {}
-    for k, name in enumerate(class_names):
+    for k, c in enumerate(cats):  # precision's class axis follows sorted category ids
         if (precision[:, :, k] > -1).any():
-            per_class[name] = round(_mean(precision[:, :, k]), 4)
+            per_class[class_names[c]] = round(_mean(precision[:, :, k]), 4)
     return {
         "mAP50": round(_mean(precision[0]), 4),
         "mAP50_95": round(_mean(precision), 4),
@@ -206,31 +221,59 @@ def evaluate(detector, images, gts, conf: float, attack: bool) -> Tuple[List, Li
 
 
 def render_markdown(report: Dict[str, Any]) -> str:
+    agnostic = any("agnostic_mAP50_95" in r["clean"] for r in report["detectors"].values())
+    scope = (
+        f" Scored classes: {', '.join(report['eval_classes'])}."
+        if report.get("eval_classes")
+        else ""
+    )
     lines = [
         "# KAAL detector comparison",
         "",
         f"Test split: `{report['data']}` ({report['n_images']} images). "
-        "Attacked = noise/pattern patch inside every ground-truth box.",
+        f"Attacked = noise/pattern patch inside every ground-truth box.{scope}",
         "",
-        "| Detector | mAP50 | mAP50:95 | mAP50:95 attacked | Drop | Latency (ms) |",
-        "|---|---|---|---|---|---|",
+        "| Detector | mAP50 | mAP50:95 | mAP50:95 attacked | Drop |"
+        + (" Any-class mAP50 | Any-class mAP50:95 |" if agnostic else "")
+        + " Latency (ms) |",
+        "|---|---|---|---|---|" + ("---|---|" if agnostic else "") + "---|",
     ]
     for name, r in report["detectors"].items():
+        extra = (
+            f" {r['clean']['agnostic_mAP50']:.3f} | {r['clean']['agnostic_mAP50_95']:.3f} |"
+            if agnostic
+            else ""
+        )
         lines.append(
             f"| {name} | {r['clean']['mAP50']:.3f} | {r['clean']['mAP50_95']:.3f} | "
-            f"{r['attacked']['mAP50_95']:.3f} | {r['robustness_drop']:+.3f} | {r['latency_ms']:.1f} |"
+            f"{r['attacked']['mAP50_95']:.3f} | {r['robustness_drop']:+.3f} |{extra} "
+            f"{r['latency_ms']:.1f} |"
         )
+    names = list(report["detectors"])
+    header = ["", "| {} | " + " | ".join(names) + " |", "|---|" + "---|" * len(names)]
     classes = sorted(
         {c for r in report["detectors"].values() for c in r["clean"]["per_class_mAP50_95"]}
     )
-    lines += ["", "## Per-class mAP50:95 (clean)", "", "| Class | " + " | ".join(report["detectors"]) + " |",
-              "|---|" + "---|" * len(report["detectors"])]  # fmt: skip
+    lines += ["", "## Per-class mAP50:95 (clean)"] + [h.format("Class") for h in header]
     for c in classes:
         vals = [
             f"{r['clean']['per_class_mAP50_95'].get(c, 0):.3f}"
             for r in report["detectors"].values()
         ]
         lines.append(f"| {c} | " + " | ".join(vals) + " |")
+    sources = sorted(
+        {s for r in report["detectors"].values() for s in r["clean"].get("per_source_mAP50_95", {})}
+    )
+    if sources:
+        lines += ["", "## Per-source mAP50:95 (clean → attacked)"] + [
+            h.format("Source") for h in header
+        ]
+        for src in sources:
+            vals = [
+                f"{r['clean']['per_source_mAP50_95'][src]:.3f} → {r['attacked']['per_source_mAP50_95'][src]:.3f}"
+                for r in report["detectors"].values()
+            ]
+            lines.append(f"| {src} | " + " | ".join(vals) + " |")
     f = report["fft_defense"]
     lines += [
         "",
@@ -243,6 +286,49 @@ def render_markdown(report: Dict[str, Any]) -> str:
     return "\n".join(lines) + "\n"
 
 
+def source_of(path: Path) -> str:
+    """Dataset source from the ``<source>_<name>.jpg`` naming used by the builders."""
+    return path.stem.split("_", 1)[0]
+
+
+def summarize(
+    gts: List[List[Tuple[int, List[float]]]],
+    dets: List[List[Dict[str, Any]]],
+    sizes: List[Tuple[int, int]],
+    class_names: List[str],
+    sources: List[str],
+    eval_classes: Optional[Sequence[int]] = None,
+    ignores: Optional[List[List[Tuple[int, List[float]]]]] = None,
+    agnostic: bool = False,
+) -> Dict[str, Any]:
+    """Overall + per-source COCO mAP, optionally class-agnostic ("found the vehicle at all")."""
+    res = coco_map(gts, dets, sizes, class_names, eval_classes, ignores)
+    if len(set(sources)) > 1:
+        res["per_source_mAP50_95"] = {}
+        for src in sorted(set(sources)):
+            idx = [i for i, s in enumerate(sources) if s == src]
+            res["per_source_mAP50_95"][src] = coco_map(
+                [gts[i] for i in idx],
+                [dets[i] for i in idx],
+                [sizes[i] for i in idx],
+                class_names,
+                eval_classes,
+                [ignores[i] for i in idx] if ignores else None,
+            )["mAP50_95"]
+    if agnostic:
+        keep = set(eval_classes) if eval_classes is not None else set(range(len(class_names)))
+        one = coco_map(
+            [[(0, b) for c, b in g if c in keep] for g in gts],
+            [[{**d, "class_id": 0} for d in ds if d["class_id"] in keep] for ds in dets],
+            sizes,
+            ["object"],
+            None,
+            ignores,
+        )
+        res["agnostic_mAP50"], res["agnostic_mAP50_95"] = one["mAP50"], one["mAP50_95"]
+    return res
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="Compare KAAL detectors on one test split.")
     parser.add_argument(
@@ -253,23 +339,42 @@ def main() -> None:
     parser.add_argument("--max-images", type=int, default=0, help="0 = whole split")
     parser.add_argument("--conf", type=float, default=0.01, help="Low threshold for mAP")
     parser.add_argument("--fft-threshold", type=float, default=DEFAULT_FFT_THRESHOLD)
+    parser.add_argument(
+        "--eval-classes",
+        default="",
+        help="Comma-separated class names to score (default: all). Detections of other "
+        "classes are dropped — use for test sets that label only some classes.",
+    )
+    parser.add_argument(
+        "--agnostic",
+        action="store_true",
+        help="Also report class-agnostic mAP over the scored classes",
+    )
     parser.add_argument("--out", default=str(HERE / "runs" / "compare"))
     args = parser.parse_args()
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
 
     data_dir = Path(args.data)
     images, class_names = load_split(data_dir, args.split, args.max_images)
-    sizes, gts = [], []
+    eval_classes = [
+        class_names.index(c.strip()) for c in args.eval_classes.split(",") if c.strip()
+    ] or None
+    ignore_dir = data_dir / args.split / "ignore"
+    sizes, gts, ignores = [], [], []
     for p in images:
         h, w = imread(p).shape[:2]
         sizes.append((h, w))
         gts.append(read_gt(data_dir / args.split / "labels" / f"{p.stem}.txt", h, w))
+        ignores.append(read_gt(ignore_dir / f"{p.stem}.txt", h, w))
+    sources = [source_of(p) for p in images]
     logger.info("Evaluating on %d %s images", len(images), args.split)
 
     report: Dict[str, Any] = {
         "data": str(data_dir),
         "split": args.split,
         "n_images": len(images),
+        "eval_classes": [class_names[c] for c in eval_classes] if eval_classes else None,
+        "ignore_regions": sum(len(i) for i in ignores),
         "detectors": {},
     }
     for spec in args.detector:
@@ -277,8 +382,13 @@ def main() -> None:
         detector = load_detector(None, weights)
         clean_dets, lat = evaluate(detector, images, gts, args.conf, attack=False)
         attacked_dets, _ = evaluate(detector, images, gts, args.conf, attack=True)
-        clean = coco_map(gts, clean_dets, sizes, class_names)
-        attacked = coco_map(gts, attacked_dets, sizes, class_names)
+        common = dict(
+            eval_classes=eval_classes,
+            ignores=ignores if any(ignores) else None,
+            agnostic=args.agnostic,
+        )
+        clean = summarize(gts, clean_dets, sizes, class_names, sources, **common)  # type: ignore[arg-type]
+        attacked = summarize(gts, attacked_dets, sizes, class_names, sources, **common)  # type: ignore[arg-type]
         report["detectors"][name] = {
             "weights": weights,
             "clean": clean,

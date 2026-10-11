@@ -5,7 +5,7 @@ test_compare_detectors.py — Evaluation math used for the RF-DETR vs YOLO repor
 import numpy as np
 import pytest
 
-from MODEL.compare_detectors import _auroc, coco_map, patched_copy, read_gt
+from MODEL.compare_detectors import _auroc, coco_map, patched_copy, read_gt, summarize
 
 pytest.importorskip("pycocotools")
 
@@ -56,3 +56,31 @@ def test_read_gt_and_deterministic_patch(tmp_path):
     img = np.full((100, 200, 3), 120, dtype=np.uint8)
     a, b = patched_copy(img, gt, seed=4), patched_copy(img, gt, seed=4)
     assert np.array_equal(a, b) and not np.array_equal(a, img)
+
+
+def test_ignore_region_neither_rewards_nor_penalises():
+    gts = [[(1, [10.0, 10.0, 50.0, 40.0])]]
+    dets = [[_det(1, gts[0][0][1], 0.8), _det(1, [120.0, 120.0, 40.0, 40.0], 0.95)]]
+    plain = coco_map(gts, dets, [(200, 200)], CLASSES)
+    ignored = coco_map(
+        gts, dets, [(200, 200)], CLASSES, ignores=[[(0, [118.0, 118.0, 44.0, 44.0])]]
+    )
+    assert plain["mAP50"] < 1.0  # the confident extra box is a false positive
+    assert ignored["mAP50"] == pytest.approx(1.0)
+
+
+def test_eval_classes_drop_unscored_detections():
+    gts = [[(1, [10.0, 10.0, 50.0, 40.0])]]
+    dets = [[_det(1, gts[0][0][1], 0.8), _det(0, [120.0, 120.0, 40.0, 40.0], 0.95)]]
+    out = coco_map(gts, dets, [(200, 200)], CLASSES, eval_classes=[1])
+    assert out["mAP50"] == pytest.approx(1.0)
+    assert set(out["per_class_mAP50_95"]) == {"tank"}
+
+
+def test_summarize_agnostic_and_per_source():
+    gts = [[(1, [10.0, 10.0, 50.0, 40.0])], [(1, [30.0, 30.0, 40.0, 40.0])]]
+    dets = [[_det(0, gts[0][0][1])], [_det(1, gts[1][0][1])]]  # first box: right place, wrong class
+    out = summarize(gts, dets, [(200, 200)] * 2, CLASSES, ["web", "russian"], agnostic=True)
+    assert out["agnostic_mAP50"] == pytest.approx(1.0)
+    assert out["per_source_mAP50_95"]["russian"] == pytest.approx(1.0)
+    assert out["per_source_mAP50_95"]["web"] == pytest.approx(0.0)
