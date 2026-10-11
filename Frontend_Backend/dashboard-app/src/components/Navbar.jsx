@@ -56,7 +56,7 @@ export default function Navbar({ systemMetrics, isRunning }) {
       {/* Center — Status Indicators */}
       <div className="flex items-center gap-6">
         <NavIndicator label="SYS" value="NOMINAL" color="emerald" />
-        <NavIndicator label="NET" value={`${Math.round(systemMetrics.bandwidth)}%`} color="cyan" />
+        <NavIndicator label="NET" value={`${Math.round(systemMetrics.bandwidth)} KB/s`} color="cyan" />
         <NavIndicator label="SIM" value={isRunning ? "ACTIVE" : "PAUSED"} color={isRunning ? "red" : "amber"} />
 
         {/* Divider */}

@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef } from 'react';
 import * as Engine from '../lib/SwarmEngine';
 
 const BG = '#05080c';

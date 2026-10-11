@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { motion } from "motion/react";
 
-function Controls({ setSelectedModel, isRunning, setIsRunning }) {
+function Controls({ setSelectedModel, isRunning, setIsRunning, systemMetrics }) {
   const [activeBtn, setActiveBtn] = useState(isRunning ? "start" : "stop");
 
   const handleStart = () => {
@@ -85,7 +85,7 @@ function Controls({ setSelectedModel, isRunning, setIsRunning }) {
       <div className="flex-1" />
       <div className="flex items-end justify-between">
         <div>
-          <p className="metric text-xl">{Math.floor(Math.random() * 100)}%</p>
+          <p className="metric text-xl">{Math.round(systemMetrics?.cpu ?? 0)}%</p>
           <p className="metric-label">CPU LOAD</p>
         </div>
         <div className="text-right">
@@ -139,4 +139,4 @@ function ControlButton({ icon, label, color, isActive, onClick }) {
   );
 }
 
-export default Controls;
+export default Controls;

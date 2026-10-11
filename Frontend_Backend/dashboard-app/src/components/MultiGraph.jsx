@@ -103,7 +103,7 @@ function MultiGraph({ data }) {
               strokeWidth={1.5}
               fill="url(#alphaGradient)"
               dot={false}
-              name="Signal α"
+              name="FFT score"
             />
             <Area
               type="monotone"
@@ -112,7 +112,7 @@ function MultiGraph({ data }) {
               strokeWidth={1.5}
               fill="url(#betaGradient)"
               dot={false}
-              name="Signal β"
+              name="% boxes flagged"
             />
             <Area
               type="monotone"
@@ -121,7 +121,7 @@ function MultiGraph({ data }) {
               strokeWidth={1.5}
               fill="url(#gammaGradient)"
               dot={false}
-              name="Signal γ"
+              name="Temporal ×100"
             />
           </AreaChart>
         </ResponsiveContainer>
