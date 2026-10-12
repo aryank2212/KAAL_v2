@@ -77,7 +77,7 @@ Every tracked file, what it does, and its status. Companion to
 
 | File | Status | Purpose |
 |---|---|---|
-| `MODEL/train_detector.py` | tool | Fine-tunes RF-DETR (nano/small/medium) or a YOLO baseline (yolo26n/s/m, yolov8n/m) on a YOLO-format dataset; writes `runs/train/<name>/kaal_train_summary.json`. Optional `--resume-from` warm start. |
+| `MODEL/train_detector.py` | tool | Fine-tunes RF-DETR (nano/small/medium) or a YOLO baseline (yolo26n/s/m, yolov8n/m) on a YOLO-format dataset; writes `runs/train/<name>/kaal_train_summary.json` (arch, data, epochs, init weights, lr, schedule, hours). `--init-weights` warm start; `--lr-scheduler step|cosine` + `--lr-min-factor`; `--workers`. |
 | `MODEL/trainer.py` | research | `AdversarialTrainer`: Ultralytics training with the three defense modes (none / augment / full). |
 | `MODEL/pipeline.py` | research | CLI tying `Config` → `AdversarialTrainer` → `RobustnessEvaluator` (the Phase 0 pipeline). |
 | `MODEL/training/adv_train.py` | legacy | `RobustDetectionTrainer`: PGD adversarial training hook for Ultralytics (experimental). |
@@ -175,6 +175,7 @@ Hugging Face Hub with `python -m MODEL.fetch_weights` (`Docs/MODEL_CARD.md`,
 | `test_benchmark.py`, `test_failure_analysis.py`, `test_config.py`, `test_make_demo_video.py` | Research harnesses, config validation, demo clip. |
 | `test_datasets_registry.py` | Registry schema and consistency with the dataset builders; published models pin a 40-hex Hub commit and SHA-256s. |
 | `test_export_model.py` | ONNX parity maths (identical vs degraded detector), streamed SHA-256. |
+| `test_train_detector.py` | `train_detector` passes the cosine schedule + floor, keeps RF-DETR's default step schedule, and warm-starts from `--init-weights` (fake `rfdetr`, no GPU). |
 | `test_fetch_weights.py` | Hub restore with a fake downloader: pinned revision, hash mismatch writes nothing, foreign sidecar rejected, verified files skipped, stale files replaced. |
 | `test_publish_model.py` | Release-file hash checks, card rendering (no placeholders, valid YAML metadata), upload order (private → gated → commit → tag → public last), checkpoint stripping and path-leak refusal (torch tests skip without torch). |
 | `integration/test_server.py` | Backend: REST schema, settings validation + token, CORS + WS origin, worker → broadcast path, drop-oldest queue, live confidence. |

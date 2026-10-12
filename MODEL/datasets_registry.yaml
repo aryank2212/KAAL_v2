@@ -266,7 +266,8 @@ built:
     known_issues:
       - 14 test / 16 val images near-duplicate another image of the same split (weigh twice; fair across models)
 
-# models: status production | baseline | superseded | pending. The single
+# models: status production | baseline | superseded | pending | rejected
+# (evaluated against production and not promoted). The single
 # production entry is what the backend loads (MODEL/detectors.py
 # production_weights). weights / onnx are repo-relative and gitignored; sha256 /
 # onnx_sha256 identify them. A hub: block (repo_id, tag, revision = commit sha)
@@ -313,3 +314,19 @@ models:
       Best val mAP50:95 0.462 on kaal_v4 val (last epoch, still rising). kaal_v4 test 0.405 mAP50:95
       (v3 0.313); ground test any-class mAP50 0.915 (v3 0.720). ONNX parity +0.0048 mAP50:95 on
       200 val images. MODEL/RESULTS.md section 7.
+
+  - id: rfdetr-small-v5
+    arch: rfdetr-small
+    trained_on: kaal_v4
+    weights: MODEL/runs/release/rfdetr-small-v5/rfdetr-small-v5.pth
+    sha256: a9403260208e8b8511e3422924c7e75b0e33b9ac921ca9630c1321612f80e4a0
+    onnx: MODEL/runs/export/rfdetr-small-v5/rfdetr-small-v5.onnx
+    onnx_sha256: 3bddf01a24c5d52cdc99b9007e2a49056550015da132ec499a2bb98c5be1f0ab
+    training_checkpoint: MODEL/runs/train/rfdetr-small-v5/checkpoint_best_total.pth
+    training_checkpoint_sha256: 6e6ee54d2f649e617fa1d6d7780bfae5fff0f6fc3ca166ad8554d71050a37a01
+    status: rejected
+    notes: >-
+      Longer-schedule experiment (2026-10-12): warm start from the v4 release checkpoint, lr 5e-5 cosine to
+      0.05x, early-stopped after epoch 8 of 12 (best epoch 3, val mAP50:95 0.467 vs v4 0.462), 1.87 h.
+      kaal_v4 test 0.412 (v4 0.405) but kaal_ground_test 0.107 (v4 0.119; armored_vehicle 0.210 -> 0.150,
+      every source down). Not promoted, not published. MODEL/RESULTS.md section 8.

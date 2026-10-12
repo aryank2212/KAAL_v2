@@ -154,6 +154,13 @@ same latency and attack drop — promoted to production (`MODEL/RESULTS.md` §7)
 The validation curve was still rising at epoch 10, so the warm-start recipe
 has headroom.
 
+**Follow-up (2026-10-12, `MODEL/RESULTS.md` §8):** that headroom turned out
+to be in-distribution only. `rfdetr-small-v5` (warm start from v4, cosine tail,
+early-stopped at epoch 8) reached 0.412 on kaal_v4 test (+0.007), but 0.107 on
+the unseen ground-vehicle photos (v4 0.119; APC/IFV −0.060). It was not promoted.
+More epochs on the same data are no longer the recommended next step.
+Data diversity and a larger model are.
+
 ---
 
 ## ADR-008 — Weights are distributed through the Hugging Face Hub: private first, gated, CC BY-NC 4.0

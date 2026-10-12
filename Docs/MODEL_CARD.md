@@ -89,5 +89,6 @@ patch appeared on 76/80 patched frames, 0 false alarms on 110 clean frames).
 | Version | Data | Status | Key numbers |
 |---|---|---|---|
 | `rfdetr-small-v4` | kaal_v4, warm start from v3 | **production** | kaal_v4 test 0.405; unseen any-class AP50 0.915 |
+| `rfdetr-small-v5` | kaal_v4, warm start from v4, cosine tail (8 epochs) | rejected (`MODEL/RESULTS.md` §8) | kaal_v4 test 0.412 but unseen ground test 0.107 vs 0.119 (APC 0.210 → 0.150) |
 | `rfdetr-small-v3` | kaal_v3 | superseded | kaal_v3 test 0.552 (old split); kaal_v4 test 0.313; unseen 0.720 |
 | `yolo26s-v3` | kaal_v3 | baseline, optional backend | kaal_v3 test 0.517; unseen 0.015 |
