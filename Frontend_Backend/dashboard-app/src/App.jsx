@@ -1,198 +1,25 @@
-// App.jsx — root of the KAAL tactical dashboard.
-// Owns the run/stop state, the (cosmetic) model label and the live settings.
-// Everything else is derived from the latest backend snapshot delivered by
-// useDefenseSocket (WebSocket /ws, REST polling fallback): video feed,
-// detections, alert state (audio beep on alert onset), graphs and system
-// metrics. Threshold / confidence changes go to PUT /api/settings, with an
-// X-KAAL-Token header when VITE_KAAL_API_TOKEN is set.
-import { useState, useEffect, useCallback } from "react";
-import Sidebar from "./components/Sidebar";
-import Navbar from "./components/Navbar";
-import "./App.css";
+import { useEffect, useState, useCallback } from "react";
 import MainPanel from "./components/MainPanel";
 import GraphPanel from "./components/GraphPanel";
 import MultiGraph from "./components/MultiGraph";
-import Controls from "./components/Controls";
-import HealthMonitor from "./components/SystemStatus";
-import StatusBar from "./components/StatusBar";
 import SettingsPanel from "./components/SettingsPanel";
 import useDefenseSocket from "./lib/useDefenseSocket";
-
-const VIDEO_FEED = "/api/video_feed";
-const API_TOKEN = import.meta.env.VITE_KAAL_API_TOKEN;
-const EMPTY_METRICS = {
-  cpu: 0,
-  memory: 0,
-  gpu: null,
-  bandwidth: 0,
-  latency: 0,
-  uptime: "00:00:00",
-};
-
-function App() {
-  const [selectedModel, setSelectedModel] = useState("Model 1");
-  const [isRunning, setIsRunning] = useState(true);
-  const [settings, setSettings] = useState({ fft_threshold: null, conf: 0.4 });
-  // Swarm telemetry comes from the swarm canvas (alive / kia / mode); the
-  // defense snapshot only contributes status + noise below.
-  const [swarmTelemetry, setSwarmTelemetry] = useState({
-    status: "NOMINAL",
-    alive: 0,
-    kia: 0,
-    mode: "NORMAL",
-  });
-
-  // Real-time stream (WebSocket with polling fallback).
-  const { snapshot, connected } = useDefenseSocket(isRunning ? 1000 : null);
-
-  // Everything below is derived from the latest snapshot — no state copies.
-  const data = snapshot?.data ?? [];
-  const systemMetrics = snapshot?.systemMetrics ?? EMPTY_METRICS;
-  const detections = snapshot?.detections ?? [];
-  const attack = Boolean(snapshot?.is_attack);
-  const flaggedCount = snapshot?.flagged_count ?? 0;
-  const temporal = snapshot?.temporal ?? null;
-  const detector = snapshot?.detector ?? null;
-  const fftThreshold = snapshot?.fft_threshold ?? settings.fft_threshold;
-  const swarmData = {
-    ...swarmTelemetry,
-    status: snapshot?.status ?? swarmTelemetry.status,
-    noise_score: snapshot?.noise_score,
-  };
-
-  // Alert system: visual banner + audio beep on attack onset. The onset is
-  // detected while rendering (React's "adjust state on prop change" pattern),
-  // the effect only handles the beep and the timed dismissal.
-  const [prevAttack, setPrevAttack] = useState(attack);
-  const [alertActive, setAlertActive] = useState(false);
-  if (attack !== prevAttack) {
-    setPrevAttack(attack);
-    if (attack) setAlertActive(true);
-  }
-  useEffect(() => {
-    if (!alertActive) return undefined;
-    playAlertBeep();
-    const t = setTimeout(() => setAlertActive(false), 3000);
-    return () => clearTimeout(t);
-  }, [alertActive]);
-
-  // Load live defense settings once.
-  useEffect(() => {
-    fetch("/api/settings")
-      .then((r) => r.json())
-      .then((s) => setSettings((prev) => ({ ...prev, ...s })))
-      .catch(() => {});
-  }, []);
-
-  const applySettings = useCallback(async (next) => {
-    try {
-      const headers = { "Content-Type": "application/json" };
-      if (API_TOKEN) headers["X-KAAL-Token"] = API_TOKEN;
-      const res = await fetch("/api/settings", {
-        method: "PUT",
-        headers,
-        body: JSON.stringify(next),
-      });
-      if (!res.ok) return false;
-      const s = await res.json();
-      setSettings((prev) => ({ ...prev, ...s }));
-      return true;
-    } catch {
-      return false;
-    }
-  }, []);
-
-  return (
-    <div className="app flex flex-col h-screen overflow-hidden text-white">
-      <Navbar systemMetrics={systemMetrics} isRunning={isRunning} />
-
-      <div className="flex flex-1 overflow-hidden">
-        <Sidebar
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
-          systemMetrics={systemMetrics}
-        />
-
-        <div className="flex-1 grid grid-cols-8 grid-rows-[auto_2fr_1fr_auto] gap-3 p-3 overflow-hidden">
-          <div className="col-span-8">
-            <StatusBar
-              systemMetrics={systemMetrics}
-              isRunning={isRunning}
-              swarmData={swarmData}
-              connected={connected}
-              attack={attack}
-              fftThreshold={fftThreshold}
-              flaggedCount={flaggedCount}
-              temporal={temporal}
-              detector={detector}
-            />
-          </div>
-
-          <div className="col-span-6 row-span-2 glass active">
-            <MainPanel
-              image={VIDEO_FEED}
-              selectedModel={selectedModel}
-              isRunning={isRunning}
-              swarmData={swarmData}
-              onSwarmData={setSwarmTelemetry}
-              detections={detections}
-              attack={attack}
-              alertActive={alertActive}
-            />
-          </div>
-
-          <div className="col-span-2 glass">
-            <GraphPanel data={data} />
-          </div>
-
-          <div className="col-span-2 glass">
-            <MultiGraph data={data} />
-          </div>
-
-          <div className="col-span-4 flex flex-col gap-3 overflow-hidden">
-            <div className="flex-1 glass min-h-0">
-              <Controls
-                setSelectedModel={setSelectedModel}
-                isRunning={isRunning}
-                setIsRunning={setIsRunning}
-                systemMetrics={systemMetrics}
-              />
-            </div>
-            <div className="flex-1 glass min-h-0">
-              <SettingsPanel
-                key={`${fftThreshold}-${settings.conf}`}
-                settings={{ fft_threshold: fftThreshold, conf: settings.conf }}
-                onApply={applySettings}
-              />
-            </div>
-          </div>
-
-          <div className="col-span-4">
-            <HealthMonitor systemMetrics={systemMetrics} isRunning={isRunning} />
-          </div>
-        </div>
-      </div>
-    </div>
-  );
+import "./App.css";
+const TOKEN=import.meta.env.VITE_KAAL_API_TOKEN, EMPTY={cpu:0,memory:0,gpu:null,latency:0,uptime:"—"};
+const NAV=["COMMAND MAP","DETECTIONS","ANALYTICS","SENSOR FEED","SWARM","CONFIG"];
+export default function App(){
+ const [view,setView]=useState(NAV[0]),[running,setRunning]=useState(true),[swarm,setSwarm]=useState({}),[settings,setSettings]=useState({fft_threshold:.08,conf:.4});
+ const {snapshot,connected}=useDefenseSocket(running?1000:null),metrics=snapshot?.systemMetrics??EMPTY,detections=snapshot?.detections??[],attack=!!snapshot?.is_attack,flagged=snapshot?.flagged_count??detections.filter(d=>d.is_adversarial).length,detector=snapshot?.detector,temporal=snapshot?.temporal,noise=snapshot?.noise_score,history=snapshot?.data??[],threshold=snapshot?.fft_threshold??settings.fft_threshold;
+ useEffect(()=>{fetch("/api/settings").then(r=>r.ok?r.json():null).then(s=>s&&setSettings(p=>({...p,...s}))).catch(()=>{});},[]);
+ const applySettings=useCallback(async next=>{try{const headers={"Content-Type":"application/json"};if(TOKEN)headers["X-KAAL-Token"]=TOKEN;const r=await fetch("/api/settings",{method:"PUT",headers,body:JSON.stringify(next)});if(!r.ok)return false;setSettings(p=>({...p,...await r.json()}));return true;}catch{return false;}},[]);
+ const status=connected?"LIVE":snapshot?"POLLING":"OFFLINE";
+ const feed=<MainPanel image="/api/video_feed" selectedModel={detector?.backend||"KAAL"} isRunning={running} swarmData={swarm} onSwarmData={setSwarm} detections={detections} attack={attack} alertActive={attack}/>;
+ return <div className="geo-app"><header className="geo-topbar"><div className="geo-brand"><div className="geo-mark">K</div><div><strong>KAAL<span>_v2</span></strong><small>DRONE DEFENSE SYSTEM</small></div></div><nav>{NAV.map(n=><button key={n} className={view===n?"selected":""} onClick={()=>setView(n)}>{n}</button>)}</nav><div className="geo-top-right"><span className={"live-pill "+(snapshot?"online":"")}><i/>{status}</span><span className="utc">{new Date().toLocaleString([],{dateStyle:"medium",timeStyle:"medium",hour12:false})}</span><button className="stream-toggle" onClick={()=>setRunning(v=>!v)}>{running?"PAUSE":"RESUME"}</button></div></header>
+ <div className="geo-workspace"><aside className="geo-left"><section className="geo-section"><div className="geo-section-head">OPERATIONS <span>+ New</span></div>{["Active Mission","Border Surveillance","Coastal Patrol","Test Range"].map((x,i)=><button key={x} className={"operation "+(!i?"active":"")} onClick={()=>setView(NAV[0])}><i/><span>{x}<small>{!i?"Connected to KAAL pipeline":"No mission selected"}</small></span></button>)}</section><section className="geo-section"><div className="geo-section-head">LAYERS <span>⌄</span></div>{["Satellite / Camera Feed","Areas of Interest","Detection Overlays","Historical Tracks","Friendly Assets","Unknown Objects"].map((x,i)=><label className="layer-row" key={x}><span className="layer-icon">{["◉","◇","⊙","⌁","○","△"][i]}</span>{x}<input type="checkbox" defaultChecked={i!==3}/></label>)}</section><section className="geo-section"><div className="geo-section-head">SENSOR FEED <span className="mini-online">● ONLINE</span></div><div className="sensor-preview">{feed}</div><div className="sensor-caption"><span>/api/video_feed</span><span>{snapshot?"RECEIVING":"WAITING"}</span></div></section><section className="geo-section"><div className="geo-section-head">ASSETS <span>REPORTED</span></div>{["DR-01 / Recon","DR-02 / Recon","DR-03 / Interceptor"].map(x=><div className="asset-row" key={x}><i/>{x}<span>—</span></div>)}</section></aside>
+ <main className="geo-center">{["COMMAND MAP","SENSOR FEED","SWARM"].includes(view)?<><div className="map-toolbar"><div><strong>{view}</strong><span> · {snapshot?"BACKEND SNAPSHOT ACTIVE":"AWAITING BACKEND"}</span></div><div className="map-tools"><button>＋</button><button>−</button><button>◎</button><button>⛶</button></div></div><div className="map-canvas"><div className="map-grid"/><div className="map-terrain terrain-one"/><div className="map-terrain terrain-two"/><div className="map-crosshair"/><div className="map-coordinate coord-a">LIVE SENSOR VIEW<span>KAAL / PERCEPTION</span></div><div className="radar-ring ring-a"/><div className="radar-ring ring-b"/><div className="radar-ring ring-c"/><div className="map-feed">{feed}</div><div className="map-object object-a"><i/>{detections[0]?.label||detections[0]?.class_name||"DETECTION"}<b>{detections[0]?.confidence==null?"—":Number(detections[0].confidence).toFixed(2)}</b></div>{flagged>0&&<div className="map-object object-b"><i/>FLAGGED REGION<b>{flagged}</b></div>}<div className="map-coordinate coord-b">{snapshot?"FRAME STREAM RECEIVED":"NO LIVE FRAME"}<span>Location unavailable from current backend</span></div><div className="map-legend"><span><i className="legend-green"/> NORMAL</span><span><i className="legend-red"/> FLAGGED</span><span><i className="legend-blue"/> SENSOR RANGE</span></div></div><div className="timeline"><div className="timeline-head"><strong>TIMELINE</strong><span className="live-pill online"><i/>LIVE</span><span>{history.length} snapshots</span><div className="timeline-spacer"/><span>{new Date().toLocaleTimeString()}</span></div><div className="timeline-ruler"><span>−60s</span><span>−45s</span><span>−30s</span><span>−15s</span><span>NOW</span></div><div className="timeline-track"><span style={{width:Math.min(100,history.length/60*100)+"%"}}/></div><div className="timeline-foot"><span>Detection history from backend snapshots</span><span>{attack?"ANOMALY REPORTED":"NO ACTIVE ALERT REPORTED"}</span></div></div></>:view==="CONFIG"?<div className="geo-content-page"><div className="page-title"><span>CONFIGURATION</span><h1>Defense parameters</h1></div><section className="geo-card"><SettingsPanel settings={settings} onApply={applySettings}/></section><section className="geo-card"><h3>RUNTIME CONNECTION</h3><Info label="Transport" value={status}/><Info label="Detector" value={detector?.backend||"Not reported"}/><Info label="Detector mode" value={detector?.fallback?"Demo / fallback":detector?"Backend reported":"Unknown"}/><Info label="Settings endpoint" value="/api/settings"/></section></div>:<div className="geo-content-page"><div className="page-title"><span>OBSERVABILITY</span><h1>{view==="ANALYTICS"?"Signal analytics":"Detection review"}</h1></div><div className="analytics-grid"><section className="geo-card"><h3>FFT ANOMALY HISTORY</h3><GraphPanel data={history}/></section><section className="geo-card"><h3>MULTI-SIGNAL HISTORY</h3><MultiGraph data={history}/></section></div><section className="geo-card"><h3>CURRENT DETECTIONS <span className="muted">{detections.length} objects</span></h3>{detections.length?detections.map((d,i)=><div className="detection-row" key={d.id??i}><span className={d.is_adversarial?"danger-dot":"normal-dot"}/><strong>{d.label||d.class_name||d.class||"Detected object"}</strong><span>{d.confidence==null?"Confidence —":"Confidence "+Number(d.confidence).toFixed(2)}</span><b>{d.is_adversarial?"FLAGGED":"OBSERVED"}</b></div>):<p className="empty-state">No detections in current backend snapshot.</p>}</section></div>}</main>
+ <aside className="geo-right"><section className="geo-section selected-object"><div className="geo-section-head">SELECTED OBJECT <span>↻</span></div><div className="object-summary"><div className="object-thumb">◎</div><div><strong>{flagged?"Flagged region":"Current scene"}</strong><span className={attack?"danger-text":"green-text"}>{attack?"ANOMALY REPORTED":"NOMINAL"}</span><small>Current backend snapshot</small></div></div><Info label="Detector" value={detector?.backend||"N/A"}/><Info label="Flagged regions" value={flagged}/><Info label="Frame score" value={noise==null?"N/A":Number(noise).toFixed(3)}/><Info label="Temporal cue" value={temporal?.ready?Number(temporal.score).toFixed(3):temporal?"Calibrating":"Unavailable"}/></section><section className="geo-section"><div className="geo-section-head">DETECTION DETAILS</div><Score label="Frequency (FFT)" value={noise}/><Score label="FFT threshold" value={threshold}/><Score label="Temporal consistency" value={temporal?.score}/><div className="score-bar"><span style={{width:noise==null?"0%":Math.max(0,Math.min(100,Number(noise)*100))+"%"}}/></div><small className="subnote">Unavailable values are not fabricated.</small></section><section className="geo-section"><div className="geo-section-head">SYSTEM METRICS <span className="mini-online">● {snapshot?"LIVE":"WAITING"}</span></div><div className="system-metrics"><Metric label="CPU" value={metrics.cpu==null?"N/A":Math.round(metrics.cpu)+"%"}/><Metric label="MEMORY" value={metrics.memory==null?"N/A":Math.round(metrics.memory)+"%"}/><Metric label="GPU" value={metrics.gpu==null?"N/A":Math.round(metrics.gpu)+"%"}/><Metric label="LATENCY" value={metrics.latency==null?"N/A":Math.round(metrics.latency)+" ms"}/></div></section><section className="geo-section"><div className="geo-section-head">RECENT EVENTS</div><Event title={attack?"Anomaly reported":"No active anomaly"} detail="Latest backend snapshot" tone={attack?"event-red":"event-green"}/><Event title={connected?"WebSocket connected":snapshot?"REST polling fallback":"Backend not connected"} detail={status} tone="event-blue"/></section></aside></div><footer className="geo-footer"><span>KAAL_v2 · DEFENSE OBSERVABILITY</span><span><i className={snapshot?"footer-green":"footer-amber"}/>{connected?"WEBSOCKET":snapshot?"POLLING FALLBACK":"WAITING FOR BACKEND"} · {snapshot?"SNAPSHOT RECEIVED":"NO SNAPSHOT"}</span></footer></div>;
 }
-
-function playAlertBeep() {
-  try {
-    const Ctx = window.AudioContext || window.webkitAudioContext;
-    const ctx = new Ctx();
-    const osc = ctx.createOscillator();
-    const gain = ctx.createGain();
-    osc.type = "square";
-    osc.frequency.value = 880;
-    gain.gain.setValueAtTime(0.15, ctx.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.5);
-    osc.connect(gain);
-    gain.connect(ctx.destination);
-    osc.start();
-    osc.stop(ctx.currentTime + 0.5);
-  } catch {
-    /* audio unavailable — visual alert still fires */
-  }
-}
-
-export default App;
+function Info({label,value}){return <div className="info-row"><span>{label}</span><b>{value==null?"N/A":String(value)}</b></div>}
+function Metric({label,value}){return <div className="system-metric"><span>{label}</span><strong>{value}</strong><div className="metric-spark"><i/></div></div>}
+function Score({label,value}){return <div className="score-line"><span>{label}</span><b>{value==null?"N/A":Number(value).toFixed(3)}</b></div>}
+function Event({title,detail,tone}){return <div className="event-mini"><i className={tone}/><span><b>{title}</b><small>{detail}</small></span></div>}
