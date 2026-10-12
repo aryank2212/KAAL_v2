@@ -222,5 +222,6 @@ Face model repo.
 [`ak-2468/kaal-rfdetr-small`](https://huggingface.co/ak-2468/kaal-rfdetr-small): private, gated (auto), tag `v4` =
 commit `496fd0e9…`. The Hub's LFS SHA-256 of the `.pth` and `.onnx` equals the
 registry hashes, and a real `fetch_weights` round trip from the Hub restored
-and verified all three files. The owner makes the repo public after reviewing
-the page.
+and verified all three files. After reviewing the page, the owner made the
+repo public the same day. An anonymous download is refused by the gate until
+the user accepts the conditions (checked).
