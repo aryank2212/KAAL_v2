@@ -266,6 +266,13 @@ built:
     known_issues:
       - 14 test / 16 val images near-duplicate another image of the same split (weigh twice; fair across models)
 
+# models: status production | baseline | superseded | pending. The single
+# production entry is what the backend loads (MODEL/detectors.py
+# production_weights). weights / onnx are repo-relative and gitignored; sha256 /
+# onnx_sha256 identify them. A hub: block (repo_id, tag, revision = commit sha)
+# means the files are published on the Hugging Face Hub and
+# python -m MODEL.fetch_weights restores them; python -m MODEL.publish_model
+# writes the release checkpoint and uploads.
 models:
   - id: rfdetr-small-v3
     arch: rfdetr-small
@@ -286,10 +293,20 @@ models:
   - id: rfdetr-small-v4
     arch: rfdetr-small
     trained_on: kaal_v4
-    weights: MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth
+    # Release checkpoint (python -m MODEL.publish_model strip): the training
+    # checkpoint minus optimizer/EMA/loop state and local paths; identical
+    # predictions (100 kaal_v4 test images, 21,714 detections, zero difference).
+    weights: MODEL/runs/release/rfdetr-small-v4/rfdetr-small-v4.pth
+    sha256: fb2a2f0532c138d72ef02c3ddb3ca9ab5bb82e2459a51e0707be71a0b79cc8f0
     onnx: MODEL/runs/export/rfdetr-small-v4/rfdetr-small-v4.onnx
-    sha256: d38e4896dbcf80809d9f635f754d2be5dfa5bb7fd267281caad0a82af9c13d39
     onnx_sha256: f0c6fe9aab09af6240ffc9766e188b19acb64ef970570b52a67a67b24c288e58
+    training_checkpoint: MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth
+    training_checkpoint_sha256: d38e4896dbcf80809d9f635f754d2be5dfa5bb7fd267281caad0a82af9c13d39
+    # Published 2026-10-12: private + gated (auto-approve), CC BY-NC 4.0 (Docs/DECISIONS.md ADR-008).
+    hub:
+      repo_id: ak-2468/kaal-rfdetr-small
+      tag: v4
+      revision: 496fd0e909bce8eb4300aa60aa36b4bfd9b2356a
     status: production
     notes: >-
       Warm start from rfdetr-small-v3; 10 epochs, lr 5e-5, batch 4 x grad-accum 4, 2.43 h (RTX 4060).

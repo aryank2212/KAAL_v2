@@ -26,7 +26,8 @@ Configuration (environment variables)
     KAAL_DETECTOR             rfdetr | onnx | yolo | auto (default auto: from weights suffix)
     KAAL_MODEL_PATH           weights (.pth/.ckpt -> RF-DETR, .onnx -> ONNX Runtime,
                               .pt -> YOLO); default: the
-                              production RF-DETR in MODEL/datasets_registry.yaml if
+                              production model in MODEL/datasets_registry.yaml (.pth,
+                              else .onnx; restore with python -m MODEL.fetch_weights) if
                               present on disk, else MODEL/yolov8m.pt (COCO), else demo
     KAAL_RFDETR_SIZE          nano | small | medium (COCO weights when no path given)
     KAAL_CAMERA_SOURCE        video file / stream URL instead of a webcam (files loop)

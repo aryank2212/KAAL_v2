@@ -168,7 +168,8 @@ fresh training run — never by silently re-purposing a class id.
 | Concern | Today | Next | Stack |
 |---|---|---|---|
 | Experiment tracking | `metrics.csv`, TensorBoard, `kaal_train_summary.json` | central tracking + artefacts | MLflow (self-hosted) or Weights & Biases |
-| Model registry | `models:` section of the dataset registry | versioned, signed models with stage tags | MLflow Model Registry |
+| Model registry | `models:` section of the dataset registry (SHA-256 per file, production flag) | versioned, signed models with stage tags | MLflow Model Registry; Sigstore / `model-signing` for signatures |
+| Model distribution | Hugging Face Hub, gated, one repo per model line with a tag per version; the registry pins the commit (`fetch_weights` / `publish_model`, ADR-008) | mirrors for air-gapped sites | Hub mirror or `hf download` into an artefact store (S3 / MinIO / Artifactory) |
 | Evaluation gate | manual `compare_detectors` | CI job on a GPU runner, fails on regression | GitHub Actions self-hosted runner (`integration.yml`) |
 | Data lineage | `datasets_registry.yaml` + test | content hashes | DVC / lakeFS |
 | Training scale | one GPU, grad-accum | multi-GPU / multi-node | PyTorch DDP via Lightning (RF-DETR trains on Lightning), Ray Train, Slurm |

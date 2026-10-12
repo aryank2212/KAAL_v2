@@ -4,7 +4,8 @@
 |---|---|
 | **Model** | RF-DETR-Small fine-tuned for KAAL — `rfdetr-small-v4` |
 | **Status** | production (`MODEL/datasets_registry.yaml` → `models:`; loaded by the backend by default) |
-| **Weights** | `MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth` (127 MB, SHA-256 `d38e4896dbcf80809d9f635f754d2be5dfa5bb7fd267281caad0a82af9c13d39`; not committed) |
+| **Weights** | `MODEL/runs/release/rfdetr-small-v4/rfdetr-small-v4.pth` (127 MB, SHA-256 `fb2a2f0532c138d72ef02c3ddb3ca9ab5bb82e2459a51e0707be71a0b79cc8f0`) — release checkpoint written by `python -m MODEL.publish_model strip` from the training checkpoint `MODEL/runs/train/rfdetr-small-v4/checkpoint_best_total.pth` (SHA-256 `d38e4896dbcf80809d9f635f754d2be5dfa5bb7fd267281caad0a82af9c13d39`); identical predictions, no training state or local paths; not committed to git |
+| **Distribution** | Hugging Face Hub: [`ak-2468/kaal-rfdetr-small`](https://huggingface.co/ak-2468/kaal-rfdetr-small), tag `v4` = commit `496fd0e909bce8eb4300aa60aa36b4bfd9b2356a` (pinned in the registry's `hub:` block); private until the owner publishes it, gated (accept the use conditions), CC BY-NC 4.0 — `python -m MODEL.fetch_weights` restores and verifies the files (`Docs/DECISIONS.md` ADR-008) |
 | **ONNX** | `MODEL/runs/export/rfdetr-small-v4/rfdetr-small-v4.onnx` (+ `.onnx.json`; SHA-256 `f0c6fe9aab09af6240ffc9766e188b19acb64ef970570b52a67a67b24c288e58`) — run with `KAAL_MODEL_PATH=<file>.onnx`, no torch needed |
 | **Architecture** | RF-DETR (Roboflow, Apache-2.0): DINOv2-windowed-small backbone, deformable-attention decoder, 300 queries, NMS-free; input 512 × 512 |
 | **Classes (9)** | aircraft, helicopter, tank, armored_vehicle, artillery, engineering_vehicle, soldier, vehicle, person |
@@ -68,7 +69,8 @@ patch appeared on 76/80 patched frames, 0 false alarms on 110 clean frames).
   questionable); Open Images includes toy/model tanks.
 * **Licences:** trained on non-commercial (VisDrone, Simuletic) and
   unknown-licence (legacy `mil_*`, military aircraft) data — **not cleared for
-  commercial use**; retrain from the licence-clean registry entries first.
+  commercial use**; the weights are released under CC BY-NC 4.0. Retrain
+  from the licence-clean registry entries first for any commercial use.
 * Evaluated on still images plus one synthetic video clip; real flight video
   (motion blur, compression, moving camera) is not yet benchmarked, and the
   temporal cue assumes a static camera.

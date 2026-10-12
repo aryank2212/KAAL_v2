@@ -213,16 +213,31 @@ class ONNXDetector:
         return self.postprocess(boxes[0], logits[0], image.shape[:2], conf)
 
 
-def production_weights(registry: Path = REGISTRY) -> Optional[Path]:
-    """Weights of the registry model with ``status: production``, if they exist on disk."""
+def model_entry(
+    model_id: Optional[str] = None, registry: Path = REGISTRY
+) -> Optional[Dict[str, Any]]:
+    """A ``models:`` entry of the registry by id, or the production one when ``model_id`` is None."""
     try:
         models = (yaml.safe_load(registry.read_text()) or {}).get("models", [])
     except (OSError, yaml.YAMLError):
         return None
     for model in models:
-        if model.get("status") == "production" and model.get("weights"):
-            path = REPO_ROOT / model["weights"]
-            return path if path.exists() else None
+        if (model.get("id") == model_id) if model_id else (model.get("status") == "production"):
+            return model
+    return None
+
+
+def production_weights(registry: Path = REGISTRY) -> Optional[Path]:
+    """Weights of the registry model with ``status: production`` that exist on disk.
+
+    The PyTorch checkpoint is preferred; the exported ONNX graph is used when it
+    is the only one present (``python -m MODEL.fetch_weights --format onnx`` on a
+    box without torch). A fresh clone has neither until ``MODEL.fetch_weights``.
+    """
+    model = model_entry(None, registry) or {}
+    for key in ("weights", "onnx"):
+        if model.get(key) and (REPO_ROOT / model[key]).exists():
+            return REPO_ROOT / model[key]
     return None
 
 
