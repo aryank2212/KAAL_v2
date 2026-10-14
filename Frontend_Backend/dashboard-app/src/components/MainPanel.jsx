@@ -78,9 +78,11 @@ function MainPanel({
                 {feedStatus !== "active" ? `FEED ${feedStatus.toUpperCase()}` : "DETECTOR UNAVAILABLE"}
               </div>
               <div className="mt-2 text-[10px] leading-relaxed text-slate-300" style={{ fontFamily: "var(--font-mono)" }}>
-                {feedStatus !== "active"
-                  ? "No current frames are being received. Any previously displayed frame is not current."
-                  : "The feed may be visible, but no model inference is available. Detections are not being verified."}
+                {feedStatus === "simulation"
+                  ? "Simulation mode is configured. This source provides no live camera frames."
+                  : feedStatus !== "active"
+                    ? "No current frames are being received. Any previously displayed frame is not current."
+                    : "The feed may be visible, but no model inference is available. Detections are not being verified."}
               </div>
               {!modelLoaded && (
                 <div className="mt-2 text-[9px] tracking-wider text-rose-300">NO MODEL INFERENCE</div>
