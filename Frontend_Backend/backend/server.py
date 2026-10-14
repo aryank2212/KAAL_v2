@@ -37,6 +37,7 @@ Configuration (environment variables)
     KAAL_TEMPORAL_THRESHOLD   fixed temporal threshold (default: warm-up calibrated)
     KAAL_TEMPORAL_WARMUP      warm-up frames for calibration (default 30)
     KAAL_PROCESS_SIDE         longest frame side fed to the pipeline (default 960)
+    KAAL_STALE_FRAME_AFTER_S  seconds before a feed is marked stale (default 3)
 """
 
 import asyncio
@@ -130,7 +131,20 @@ TEMPORAL_ENABLED = _env_bool("KAAL_TEMPORAL", True)
 TEMPORAL_THRESHOLD = os.environ.get("KAAL_TEMPORAL_THRESHOLD")
 TEMPORAL_WARMUP = _env_int("KAAL_TEMPORAL_WARMUP", 30)
 PROCESS_SIDE = _env_int("KAAL_PROCESS_SIDE", 960)  # longest side fed to the pipeline
+STALE_FRAME_AFTER_S = _env_float("KAAL_STALE_FRAME_AFTER_S", 3.0)
 METRICS_INTERVAL_S = 1.0  # psutil net counters + nvidia-smi are sampled at most this often
+
+
+def _resolve_operating_mode(enable_camera: bool, source_is_file: bool) -> str:
+    """Describe the configured source, not the detection/alert state."""
+    if not enable_camera:
+        return "SIMULATION"
+    if source_is_file:
+        return "REPLAY"
+    return "LIVE"
+
+
+OPERATING_MODE = _resolve_operating_mode(ENABLE_CAMERA, SOURCE_IS_FILE)
 
 # Distance estimation constants.
 KNOWN_WIDTHS: Dict[str, float] = {
@@ -206,14 +220,17 @@ class DetectorAdapter:
         self.model_path = model_path
         self.detector: Any = None
         self.is_fallback = True
+        self.load_error: Optional[str] = None
         try:
             self.detector = load_detector(self.backend, model_path or None, rfdetr_size=RFDETR_SIZE)
             self.is_fallback = False
         except ImportError as exc:
+            self.load_error = "dependency_unavailable"
             logger.warning(
                 "%s stack not installed (%s) — running in NO-DETECTOR demo mode", self.backend, exc
             )
         except Exception as exc:  # missing/corrupt weights should not kill the server
+            self.load_error = "load_failed"
             logger.error(
                 "Could not load %s weights %s: %s — demo mode", self.backend, model_path, exc
             )
@@ -224,6 +241,8 @@ class DetectorAdapter:
             "backend": self.backend,
             "weights": Path(self.model_path).name if self.model_path else None,
             "fallback": self.is_fallback,
+            "status": "fallback" if self.is_fallback else "ready",
+            "reason": self.load_error,
         }
 
     def predict(self, frame: np.ndarray, conf: float) -> List[Dict[str, Any]]:
@@ -252,6 +271,8 @@ state = AppState()
 latest_frame: Optional[bytes] = None
 latest_data: Dict[str, Any] = {
     "status": "INITIALIZING",
+    "operating_mode": OPERATING_MODE,
+    "frame_timestamp": None,
     "noise_score": 0.0,
     "fft_threshold": settings.snapshot()["fft_threshold"],
     "is_attack": False,
@@ -398,7 +419,7 @@ def annotate(
     if temporal is not None:
         txt = f"TMP: {temporal['score']:.4f}" if temporal["ready"] else "TMP: calibrating"
         cv2.putText(out, txt, (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-    status_text = "ADVERSARIAL ATTACK" if is_attack else "SYSTEM NOMINAL"
+    status_text = "ANOMALY FLAG - REVIEW" if is_attack else "NO ANOMALY FLAG"
     cv2.putText(out, status_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
     if is_attack:
         h, w = out.shape[:2]
@@ -572,6 +593,7 @@ class CameraWorker:
             "flagged_count": flagged,
             "temporal": temporal,
             "detector": self.detector.info(),
+            "frame_timestamp": time.time(),
             "detections": detections,
             "systemMetrics": self.metrics.sample(self._last_latency_ms),
             "data": list(self.history),
@@ -638,19 +660,78 @@ async def _validation_error(_: Request, exc: RequestValidationError) -> JSONResp
 
 
 async def _broadcast_loop() -> None:
+    """Broadcast frames and a one-second heartbeat so stale feeds become visible."""
     assert state.queue is not None
     while True:
-        snapshot = await state.queue.get()
+        try:
+            snapshot = await asyncio.wait_for(state.queue.get(), timeout=1.0)
+        except asyncio.TimeoutError:
+            snapshot = _snapshot()
+        payload = _decorate_snapshot(snapshot)
         for ws in list(state.clients):
             try:
-                await ws.send_json(snapshot)
+                await ws.send_json(payload)
             except Exception:
                 state.clients.discard(ws)
 
 
+def _feed_status_for(
+    operating_mode: str,
+    frame_timestamp: Optional[float],
+    camera_connected: bool,
+    now: Optional[float] = None,
+    stale_after_s: float = STALE_FRAME_AFTER_S,
+) -> tuple[str, Optional[float]]:
+    """Return a truthful source-feed state and frame age in milliseconds."""
+    if operating_mode == "SIMULATION":
+        return "simulation", None
+    if frame_timestamp is None:
+        return "waiting", None
+    current_time = time.time() if now is None else now
+    age_ms = max(0.0, (current_time - frame_timestamp) * 1000.0)
+    if age_ms > stale_after_s * 1000.0:
+        return "stale", round(age_ms, 1)
+    if not camera_connected:
+        return "disconnected", round(age_ms, 1)
+    return "active", round(age_ms, 1)
+
+
+def _decorate_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
+    """Add runtime provenance without mutating a worker-owned snapshot."""
+    payload = dict(snapshot)
+    feed_status, frame_age_ms = _feed_status_for(
+        OPERATING_MODE,
+        payload.get("frame_timestamp"),
+        state.camera_connected,
+    )
+    detector_status = state.detector_info.get("status", "initializing")
+    if OPERATING_MODE == "SIMULATION":
+        health_status = "simulation"
+    elif feed_status != "active" or not state.model_loaded:
+        health_status = "degraded"
+    else:
+        health_status = "ready"
+    payload.update(
+        {
+            "operating_mode": OPERATING_MODE,
+            "feed_status": feed_status,
+            "frame_age_ms": frame_age_ms,
+            "camera_connected": state.camera_connected,
+            "model_loaded": state.model_loaded,
+            "detector_status": detector_status,
+            "health_status": health_status,
+            "detector": dict(state.detector_info)
+            if state.detector_info
+            else payload.get("detector"),
+        }
+    )
+    return payload
+
+
 def _snapshot() -> Dict[str, Any]:
     with latest_data_lock:
-        return latest_data
+        current = dict(latest_data)
+    return _decorate_snapshot(current)
 
 
 def _origin_allowed(origin: Optional[str], host: Optional[str]) -> bool:
@@ -677,6 +758,12 @@ async def health() -> Dict[str, Any]:
     return {
         "status": "ok",
         "mode": snap["status"],
+        "operating_mode": snap["operating_mode"],
+        "health_status": snap["health_status"],
+        "feed_status": snap["feed_status"],
+        "frame_age_ms": snap["frame_age_ms"],
+        "camera_connected": snap["camera_connected"],
+        "detector_status": snap["detector_status"],
         "is_attack": snap["is_attack"],
         "camera": state.camera_connected,
         "model_loaded": state.model_loaded,
@@ -711,7 +798,8 @@ async def put_settings(
 async def video_feed():
     async def gen():
         while True:
-            frame = latest_frame
+            # Never keep serving a cached frame after capture disconnects or goes stale.
+            frame = latest_frame if _snapshot()["feed_status"] == "active" else None
             if frame is not None:
                 yield (b"--frame\r\nContent-Type: image/jpeg\r\n\r\n" + frame + b"\r\n")
             await asyncio.sleep(0.05)

@@ -67,21 +67,54 @@ def test_python_data_types(client):
     assert isinstance(payload["status"], str)
 
 
-def test_video_feed_route_registered(client):
-    """Streaming route yields jpeg multipart frames — read bounded chunks."""
+def test_video_feed_route_registered(client, monkeypatch):
+    """A fresh frame from a connected live source is streamed as multipart JPEG."""
     import asyncio
+    import time
 
     module = sys.modules["kaal_server_under_test"]
     assert any(r.path == "/api/video_feed" for r in module.app.routes)
 
-    # No worker thread is running, so seed a frame so the stream can yield
-    module.latest_frame = b"jpeg-frame-bytes"
+    # No worker thread is running; model a fresh, connected source explicitly.
+    monkeypatch.setattr(module, "OPERATING_MODE", "LIVE")
+    monkeypatch.setattr(module.state, "camera_connected", True)
+    monkeypatch.setattr(module, "latest_frame", b"jpeg-frame-bytes")
+    monkeypatch.setattr(
+        module,
+        "latest_data",
+        {**module.latest_data, "frame_timestamp": time.time()},
+    )
     response = asyncio.run(module.video_feed())
     assert "multipart/x-mixed-replace" in response.media_type
 
     frames = asyncio.run(_collect_frames(response.body_iterator, max_frames=2))
     assert len(frames) == 2
     assert b"--frame" in frames[0] and b"image/jpeg" in frames[0]
+
+
+def test_video_feed_waits_instead_of_serving_stale_frame(client, monkeypatch):
+    """A cached JPEG must not be emitted for a disconnected/stale source."""
+    import asyncio
+    import time
+
+    module = sys.modules["kaal_server_under_test"]
+    monkeypatch.setattr(module, "OPERATING_MODE", "LIVE")
+    monkeypatch.setattr(module.state, "camera_connected", False)
+    monkeypatch.setattr(module, "latest_frame", b"stale-jpeg")
+    monkeypatch.setattr(
+        module,
+        "latest_data",
+        {**module.latest_data, "frame_timestamp": time.time() - 10.0},
+    )
+    response = asyncio.run(module.video_feed())
+    assert "multipart/x-mixed-replace" in response.media_type
+
+    async def first_chunk_times_out():
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(response.body_iterator.__anext__(), timeout=0.1)
+        await response.body_iterator.aclose()
+
+    asyncio.run(first_chunk_times_out())
 
 
 def test_health_endpoint(client):
@@ -280,3 +313,51 @@ def test_metrics_sampler_throttles_nvidia_smi(monkeypatch):
         metrics = sampler.sample(latency_ms=12.5)
     assert len(calls) == 1
     assert metrics["latency"] == 12.5
+
+
+# ── KAAL V3: trustworthy source and detector status ──────────────────────
+
+
+def test_operating_mode_resolution():
+    module = _server()
+    assert module._resolve_operating_mode(False, False) == "SIMULATION"
+    assert module._resolve_operating_mode(True, True) == "REPLAY"
+    assert module._resolve_operating_mode(True, False) == "LIVE"
+
+
+def test_feed_status_classification():
+    module = _server()
+    now = 100.0
+
+    assert module._feed_status_for("SIMULATION", None, False, now) == ("simulation", None)
+    assert module._feed_status_for("LIVE", None, False, now) == ("waiting", None)
+    status, age = module._feed_status_for("LIVE", 98.0, True, now, stale_after_s=1.0)
+    assert status == "stale"
+    assert age == pytest.approx(2000.0)
+    status, age = module._feed_status_for("LIVE", 99.5, False, now, stale_after_s=3.0)
+    assert status == "disconnected"
+    assert age == pytest.approx(500.0)
+    status, age = module._feed_status_for("LIVE", 99.5, True, now, stale_after_s=3.0)
+    assert status == "active"
+    assert age == pytest.approx(500.0)
+
+
+def test_api_exposes_truthful_operating_metadata(client):
+    payload = client.get("/api/python-data").json()
+    assert payload["operating_mode"] == "SIMULATION"
+    assert payload["feed_status"] == "simulation"
+    assert payload["health_status"] == "simulation"
+    assert payload["camera_connected"] is False
+    assert payload["frame_age_ms"] is None
+    assert payload["detector_status"] in {"ready", "fallback"}
+
+    health = client.get("/api/health").json()
+    for key in (
+        "operating_mode",
+        "health_status",
+        "feed_status",
+        "frame_age_ms",
+        "camera_connected",
+        "detector_status",
+    ):
+        assert key in health

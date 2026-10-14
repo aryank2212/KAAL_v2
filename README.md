@@ -158,6 +158,7 @@ python -m MODEL.compare_detectors \
 | Document | Contents |
 |---|---|
 | [`Docs/WALKTHROUGH.md`](Docs/WALKTHROUGH.md) | deep structural walkthrough: architecture, live pipeline frame by frame, every subsystem, runbook |
+| [`Docs/KAAL_V3_ROADMAP.md`](Docs/KAAL_V3_ROADMAP.md) | V3 release gates, phased execution plan, acceptance criteria, and next tasks |
 | [`Docs/FILE_REFERENCE.md`](Docs/FILE_REFERENCE.md) | every file, its status (core / tool / research / legacy) and purpose |
 | [`Docs/DATASETS.md`](Docs/DATASETS.md) | dataset lineage, class mappings, licences, data problems found, how to add a dataset |
 | [`Docs/MODEL_CARD.md`](Docs/MODEL_CARD.md) | production detector: data, metrics, limits, intended use |
