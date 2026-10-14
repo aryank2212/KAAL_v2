@@ -1,5 +1,7 @@
-# KAAL: Autonomous Swarm & Adversarial Defense Framework
-**KAAL is a hierarchical multi-agent framework for autonomous drone swarms that combines flocking instincts with adversarial threat detection.**
+# KAAL — Perception Robustness & Swarm Research Framework
+**KAAL is a computer-vision robustness and swarm-simulation research project. It combines object detection, image-anomaly cues, evaluation tooling, and a real-time monitoring dashboard.**
+
+> **Scope and limitations:** KAAL's anomaly streams flag potentially unreliable inputs; they do not prove that an image is adversarial, repair a model's predictions, or guarantee robustness. Swarm coordination is currently a hand-coded simulation, not a validated autonomous flight system. Keep consequential actions under human control.
 
 [![CI — lint, typecheck, tests, dashboard](https://github.com/aryank2212/KAAL_v2/actions/workflows/ci.yml/badge.svg)](https://github.com/aryank2212/KAAL_v2/actions/workflows/ci.yml)
 
@@ -37,6 +39,23 @@ Drones that **don't trust a single view blindly** and **don't depend on a centra
 | React tactical dashboard | ✅ `Frontend_Backend/dashboard-app/` |
 | Swarm flocking | ⚙️ Hand-coded boid rules (dashboard canvas + `SCRIPTS/kaal_swarm.py`) |
 | MAPPO swarm policy, PyBullet/Gazebo sim, thermal/IR fallback | 🗺️ Planned — see `roadmap.md` (Phase 6) |
+
+---
+
+## 🧭 V3 direction — trustworthy perception first
+
+KAAL V3 is the next software-release direction, not a claim that a separate V3 implementation or model checkpoint already exists. The current production detector remains the registry-selected RF-DETR model; preserve it as the baseline until a candidate passes the same evaluation gates.
+
+V3 priorities:
+
+1. **Truthful operating modes:** label telemetry as `LIVE`, `REPLAY`, or `SIMULATION`; never present generated coordinates or simulated values as live sensor readings.
+2. **Explicit detector health:** surface model load state and fallback/demo mode in the API and dashboard. Missing or invalid weights must not look like successful object detection.
+3. **Calibrated measurements:** mark distance estimates as approximate unless the camera and object assumptions are calibrated; represent unavailable measurements explicitly.
+4. **Temporal-cue robustness:** evaluate false alarms under camera motion, illumination changes, scene cuts, and moving objects before relying on the static-scene cue.
+5. **Deployment security:** require authentication for exposed settings endpoints, validate configuration, and test stale-feed and reconnect behavior.
+6. **Reproducible promotion gates:** record dataset/version provenance, class mapping, model hash, clean and perturbed metrics, false-flag rate, latency, and memory. Do not promote a model solely because one aggregate metric improves.
+
+Suggested first milestone: add explicit operating-mode and detector-health fields to the backend contract, reflect them in the dashboard, and cover fallback/stale-feed behavior with regression tests. Keep V3 focused on monitoring, robustness evaluation, and simulation; consequential decisions remain human-approved.
 
 ---
 
