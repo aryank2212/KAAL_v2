@@ -140,7 +140,6 @@ function App() {
             <MainPanel
               image={VIDEO_FEED}
               selectedModel={selectedModel}
-              isRunning={isRunning}
               operatingMode={operatingMode}
               feedStatus={feedStatus}
               detectorStatus={detectorStatus}
