@@ -164,7 +164,7 @@ function MainPanel({
         {/* Top vignette */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-transparent pointer-events-none" />
 
-        {/* ADVERSARIAL ALERT banner */}
+        {/* Anomaly cue banner — review required, not proof of an attack */}
         {attack && (
           <motion.div
             initial={{ opacity: 0, y: -16 }}
@@ -173,7 +173,7 @@ function MainPanel({
           >
             <div className="w-2 h-2 rounded-full bg-white animate-ping" />
             <span className="text-[10px] tracking-[3px] font-bold text-white" style={{ fontFamily: "var(--font-display)" }}>
-              ADVERSARIAL ATTACK DETECTED
+              ANOMALY FLAG - REVIEW
             </span>
           </motion.div>
         )}
