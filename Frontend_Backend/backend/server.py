@@ -144,9 +144,7 @@ def _resolve_operating_mode(enable_camera: bool, source_is_file: bool) -> str:
     return "LIVE"
 
 
-OPERATING_MODE = _resolve_operating_mode(
-    ENABLE_CAMERA, SOURCE_IS_FILE
-)
+OPERATING_MODE = _resolve_operating_mode(ENABLE_CAMERA, SOURCE_IS_FILE)
 
 # Distance estimation constants.
 KNOWN_WIDTHS: Dict[str, float] = {
