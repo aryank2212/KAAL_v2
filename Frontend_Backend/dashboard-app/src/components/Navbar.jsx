@@ -60,6 +60,7 @@ export default function Navbar({ systemMetrics, isRunning, operatingMode = "INIT
         <NavIndicator label="SOURCE" value={operatingMode} color={operatingMode === "LIVE" ? "emerald" : operatingMode === "REPLAY" ? "amber" : "cyan"} />
         <NavIndicator label="FEED" value={feedStatus.toUpperCase()} color={feedStatus === "active" ? "emerald" : "amber"} />
         <NavIndicator label="MODEL" value={modelLoaded ? "READY" : "UNAVAILABLE"} color={modelLoaded ? "emerald" : "amber"} />
+        <NavIndicator label="NET" value={`${Math.round(systemMetrics.bandwidth)} KB/s`} color="cyan" />
 
         {/* Divider */}
         <div className="w-px h-5 bg-red-500/15" />
