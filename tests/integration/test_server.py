@@ -280,3 +280,51 @@ def test_metrics_sampler_throttles_nvidia_smi(monkeypatch):
         metrics = sampler.sample(latency_ms=12.5)
     assert len(calls) == 1
     assert metrics["latency"] == 12.5
+
+
+# ── KAAL V3: trustworthy source and detector status ──────────────────────
+
+
+def test_operating_mode_resolution():
+    module = _server()
+    assert module._resolve_operating_mode(False, False) == "SIMULATION"
+    assert module._resolve_operating_mode(True, True) == "REPLAY"
+    assert module._resolve_operating_mode(True, False) == "LIVE"
+
+
+def test_feed_status_classification():
+    module = _server()
+    now = 100.0
+
+    assert module._feed_status_for("SIMULATION", None, False, now) == ("simulation", None)
+    assert module._feed_status_for("LIVE", None, False, now) == ("waiting", None)
+    status, age = module._feed_status_for("LIVE", 98.0, True, now, stale_after_s=1.0)
+    assert status == "stale"
+    assert age == pytest.approx(2000.0)
+    status, age = module._feed_status_for("LIVE", 99.5, False, now, stale_after_s=3.0)
+    assert status == "disconnected"
+    assert age == pytest.approx(500.0)
+    status, age = module._feed_status_for("LIVE", 99.5, True, now, stale_after_s=3.0)
+    assert status == "active"
+    assert age == pytest.approx(500.0)
+
+
+def test_api_exposes_truthful_operating_metadata(client):
+    payload = client.get("/api/python-data").json()
+    assert payload["operating_mode"] == "SIMULATION"
+    assert payload["feed_status"] == "simulation"
+    assert payload["health_status"] == "simulation"
+    assert payload["camera_connected"] is False
+    assert payload["frame_age_ms"] is None
+    assert payload["detector_status"] in {"ready", "fallback"}
+
+    health = client.get("/api/health").json()
+    for key in (
+        "operating_mode",
+        "health_status",
+        "feed_status",
+        "frame_age_ms",
+        "camera_connected",
+        "detector_status",
+    ):
+        assert key in health
