@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 
-export default function Navbar({ systemMetrics, isRunning }) {
+export default function Navbar({ systemMetrics, isRunning, operatingMode = "INITIALIZING", feedStatus = "waiting", modelLoaded = false }) {
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -57,9 +57,9 @@ export default function Navbar({ systemMetrics, isRunning }) {
 
       {/* Center — Status Indicators */}
       <div className="flex items-center gap-6">
-        <NavIndicator label="SYS" value="NOMINAL" color="emerald" />
-        <NavIndicator label="NET" value={`${Math.round(systemMetrics.bandwidth)} KB/s`} color="cyan" />
-        <NavIndicator label="SIM" value={isRunning ? "ACTIVE" : "PAUSED"} color={isRunning ? "red" : "amber"} />
+        <NavIndicator label="SOURCE" value={operatingMode} color={operatingMode === "LIVE" ? "emerald" : operatingMode === "REPLAY" ? "amber" : "cyan"} />
+        <NavIndicator label="FEED" value={feedStatus.toUpperCase()} color={feedStatus === "active" ? "emerald" : "amber"} />
+        <NavIndicator label="MODEL" value={modelLoaded ? "READY" : "UNAVAILABLE"} color={modelLoaded ? "emerald" : "amber"} />
 
         {/* Divider */}
         <div className="w-px h-5 bg-red-500/15" />
@@ -67,7 +67,7 @@ export default function Navbar({ systemMetrics, isRunning }) {
         <div className="flex items-center gap-2">
           <div className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]'}`} />
           <span className="text-[10px] tracking-widest text-slate-400" style={{ fontFamily: "var(--font-display)" }}>
-            {isRunning ? "ONLINE" : "STANDBY"}
+            {isRunning ? "UPDATES ON" : "PAUSED"}
           </span>
         </div>
       </div>
