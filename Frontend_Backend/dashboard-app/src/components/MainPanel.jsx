@@ -149,6 +149,18 @@ function MainPanel({
           </span>
         </div>
 
+        {/* Bottom data strip — only source-derived or explicitly simulated values */}
+        <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-4 py-2 bg-gradient-to-t from-black/80 to-transparent">
+          <div className="flex items-center gap-4">
+            <DataTag label="SOURCE" value={displayMode} />
+            <DataTag label="FEED" value={isVideo ? "SIMULATED" : feedStatus.toUpperCase()} />
+          </div>
+          <div className="flex items-center gap-4">
+            <DataTag label="DETECTOR" value={detectorStatus.toUpperCase()} />
+            <DataTag label="INFERENCE" value={modelLoaded ? "READY" : "UNAVAILABLE"} />
+          </div>
+        </div>
+
         {/* Top vignette */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-transparent pointer-events-none" />
 
