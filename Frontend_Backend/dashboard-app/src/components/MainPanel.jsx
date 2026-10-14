@@ -1,7 +1,7 @@
 // MainPanel — centre view: the annotated camera feed (MJPEG /api/video_feed,
 // default) or, via the toggle button, the swarm simulation canvas; shows
 // detection tags, flagged boxes and a pulsing border while an alert is active.
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion } from "motion/react";
 import KaalSwarmCanvas from "./KaalSwarmCanvas";
 
@@ -14,22 +14,15 @@ function MainPanel({
   detections = [],
   attack = false,
   alertActive = false,
+  operatingMode = "INITIALIZING",
+  feedStatus = "waiting",
+  detectorStatus = "initializing",
+  modelLoaded = false,
 }) {
   const [isVideo, setIsVideo] = useState(false);
-  const [coords, setCoords] = useState({ lat: 28.6139, lon: 77.209 });
-
-  useEffect(() => {
-    if (!isRunning) return;
-    const interval = setInterval(() => {
-      setCoords((prev) => ({
-        lat: prev.lat + (Math.random() - 0.5) * 0.01,
-        lon: prev.lon + (Math.random() - 0.5) * 0.01,
-      }));
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [isRunning]);
-
   const flagged = detections.filter((d) => d.is_adversarial);
+  const displayMode = isVideo ? "SIMULATION" : operatingMode;
+  const modeColor = displayMode === "LIVE" ? "#34d399" : displayMode === "REPLAY" ? "#fbbf24" : "#22d3ee";
 
   return (
     <motion.div
@@ -80,6 +73,24 @@ function MainPanel({
           />
         )}
 
+        {!isVideo && (feedStatus !== "active" || !modelLoaded) && (
+          <div className="absolute inset-0 z-20 flex items-center justify-center bg-black/55 pointer-events-none">
+            <div className="max-w-sm mx-4 rounded-lg border border-amber-400/30 bg-black/85 px-5 py-4 text-center shadow-[0_0_28px_rgba(251,191,36,0.12)]">
+              <div className="text-[11px] font-bold tracking-[2px] text-amber-300" style={{ fontFamily: "var(--font-display)" }}>
+                {feedStatus !== "active" ? `FEED ${feedStatus.toUpperCase()}` : "DETECTOR UNAVAILABLE"}
+              </div>
+              <div className="mt-2 text-[10px] leading-relaxed text-slate-300" style={{ fontFamily: "var(--font-mono)" }}>
+                {feedStatus !== "active"
+                  ? "No current frames are being received. Any previously displayed frame is not current."
+                  : "The feed may be visible, but no model inference is available. Detections are not being verified."}
+              </div>
+              {!modelLoaded && (
+                <div className="mt-2 text-[9px] tracking-wider text-rose-300">NO MODEL INFERENCE</div>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* HUD Overlay — Corner brackets */}
         <div className="absolute inset-0 pointer-events-none">
           {/* Top-left bracket */}
@@ -118,17 +129,17 @@ function MainPanel({
             className="live-dot"
             style={{
               width: 6, height: 6,
-              background: swarmData.status === 'ENGAGING' ? '#f43f5e' : (swarmData.status === 'JAMMED' ? '#fbbf24' : '')
+              background: feedStatus === "active" ? modeColor : "#fbbf24"
             }}
           />
           <span
             className="text-[10px] tracking-wider font-medium"
             style={{
               fontFamily: "var(--font-display)",
-              color: swarmData.status === 'ENGAGING' ? '#f43f5e' : (swarmData.status === 'JAMMED' ? '#fbbf24' : '#34d399')
+              color: feedStatus === "active" || isVideo ? modeColor : "#fbbf24"
             }}
           >
-            {swarmData.status || "LIVE"}
+            {isVideo ? "SIMULATION" : feedStatus === "active" ? displayMode : feedStatus.toUpperCase()}
           </span>
         </div>
 
@@ -143,14 +154,13 @@ function MainPanel({
         {/* Bottom data strip */}
         <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-4 py-2 bg-gradient-to-t from-black/80 to-transparent">
           <div className="flex items-center gap-4">
-            <DataTag label="ALT" value="1,200 km" />
-            <DataTag label="LAT" value={coords.lat.toFixed(4)} />
-            <DataTag label="LON" value={coords.lon.toFixed(4)} />
+            <DataTag label="SOURCE" value={displayMode} />
+            <DataTag label="FEED" value={isVideo ? "SIMULATED" : feedStatus.toUpperCase()} />
           </div>
 
           <div className="flex items-center gap-4">
-            <DataTag label="SPD" value="27,400 km/h" />
-            <DataTag label="ORBIT" value="LEO-342" />
+            <DataTag label="DETECTOR" value={detectorStatus.toUpperCase()} />
+            <DataTag label="INFERENCE" value={modelLoaded ? "READY" : "UNAVAILABLE"} />
           </div>
         </div>
 
