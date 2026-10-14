@@ -132,7 +132,7 @@ TEMPORAL_THRESHOLD = os.environ.get("KAAL_TEMPORAL_THRESHOLD")
 TEMPORAL_WARMUP = _env_int("KAAL_TEMPORAL_WARMUP", 30)
 PROCESS_SIDE = _env_int("KAAL_PROCESS_SIDE", 960)  # longest side fed to the pipeline
 STALE_FRAME_AFTER_S = _env_float("KAAL_STALE_FRAME_AFTER_S", 3.0)
-METRICS_INTERVAL_S = 1.0
+METRICS_INTERVAL_S = 1.0  # psutil net counters + nvidia-smi are sampled at most this often
 
 
 def _resolve_operating_mode(enable_camera: bool, source_is_file: bool) -> str:
@@ -144,7 +144,7 @@ def _resolve_operating_mode(enable_camera: bool, source_is_file: bool) -> str:
     return "LIVE"
 
 
-OPERATING_MODE = _resolve_operating_mode(ENABLE_CAMERA, SOURCE_IS_FILE)  # psutil net counters + nvidia-smi are sampled at most this often
+OPERATING_MODE = _resolve_operating_mode(ENABLE_CAMERA, SOURCE_IS_FILE)
 
 # Distance estimation constants.
 KNOWN_WIDTHS: Dict[str, float] = {
