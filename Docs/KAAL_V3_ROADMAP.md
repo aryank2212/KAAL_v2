@@ -47,6 +47,7 @@ A milestone is done only when its tests pass and its acceptance evidence is reco
 - [x] Remove randomly drifting coordinates and invented altitude, speed, and orbit values from the mission feed.
 - [x] Show explicit warnings when frames are stale or inference is unavailable.
 - [x] Add tests for mode resolution, feed-state classification, and the API contract.
+- [x] Change anomaly wording to "flag for review" rather than asserting an attack was confirmed.
 - [ ] Run the full backend test suite and frontend lint/build in CI; fix all regressions before merge.
 - [ ] Confirm behavior manually for live camera, video-file replay, missing weights, camera disconnect, and `KAAL_ENABLE_CAMERA=0`.
 
