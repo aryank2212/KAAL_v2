@@ -108,7 +108,13 @@ function App() {
 
   return (
     <div className="app flex flex-col h-screen overflow-hidden text-white">
-      <Navbar systemMetrics={systemMetrics} isRunning={isRunning} />
+      <Navbar
+        systemMetrics={systemMetrics}
+        isRunning={isRunning}
+        operatingMode={operatingMode}
+        feedStatus={feedStatus}
+        modelLoaded={modelLoaded}
+      />
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
