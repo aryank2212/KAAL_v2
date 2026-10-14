@@ -8,7 +8,6 @@ import KaalSwarmCanvas from "./KaalSwarmCanvas";
 function MainPanel({
   image,
   selectedModel,
-  swarmData = {},
   onSwarmData,
   detections = [],
   attack = false,
@@ -142,25 +141,12 @@ function MainPanel({
           </span>
         </div>
 
-        {/* SAT-LINK badge */}
+        {/* Run state — never imply an unconnected satellite or mesh link */}
         <div className="absolute top-3 right-10 flex items-center gap-2 px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20">
-          <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+          <div className="w-1.5 h-1.5 rounded-full" style={{ background: isVideo ? "#22d3ee" : feedStatus === "active" && modelLoaded ? "#34d399" : "#fbbf24" }} />
           <span className="text-[9px] tracking-wider text-blue-300" style={{ fontFamily: "var(--font-display)" }}>
-            {swarmData.mode === 'KAAL' ? 'KAAL MESH ACTIVE' : 'STANDARD OPS'}
+            {isVideo ? "SWARM SIMULATION" : feedStatus === "active" && modelLoaded ? "PERCEPTION MONITOR" : "DEGRADED FEED"}
           </span>
-        </div>
-
-        {/* Bottom data strip */}
-        <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-4 py-2 bg-gradient-to-t from-black/80 to-transparent">
-          <div className="flex items-center gap-4">
-            <DataTag label="SOURCE" value={displayMode} />
-            <DataTag label="FEED" value={isVideo ? "SIMULATED" : feedStatus.toUpperCase()} />
-          </div>
-
-          <div className="flex items-center gap-4">
-            <DataTag label="DETECTOR" value={detectorStatus.toUpperCase()} />
-            <DataTag label="INFERENCE" value={modelLoaded ? "READY" : "UNAVAILABLE"} />
-          </div>
         </div>
 
         {/* Top vignette */}
