@@ -8,7 +8,6 @@ import KaalSwarmCanvas from "./KaalSwarmCanvas";
 function MainPanel({
   image,
   selectedModel,
-  isRunning,
   swarmData = {},
   onSwarmData,
   detections = [],
