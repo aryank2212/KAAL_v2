@@ -67,21 +67,54 @@ def test_python_data_types(client):
     assert isinstance(payload["status"], str)
 
 
-def test_video_feed_route_registered(client):
-    """Streaming route yields jpeg multipart frames — read bounded chunks."""
+def test_video_feed_route_registered(client, monkeypatch):
+    """A fresh frame from a connected live source is streamed as multipart JPEG."""
     import asyncio
+    import time
 
     module = sys.modules["kaal_server_under_test"]
     assert any(r.path == "/api/video_feed" for r in module.app.routes)
 
-    # No worker thread is running, so seed a frame so the stream can yield
-    module.latest_frame = b"jpeg-frame-bytes"
+    # No worker thread is running; model a fresh, connected source explicitly.
+    monkeypatch.setattr(module, "OPERATING_MODE", "LIVE")
+    monkeypatch.setattr(module.state, "camera_connected", True)
+    monkeypatch.setattr(module, "latest_frame", b"jpeg-frame-bytes")
+    monkeypatch.setattr(
+        module,
+        "latest_data",
+        {**module.latest_data, "frame_timestamp": time.time()},
+    )
     response = asyncio.run(module.video_feed())
     assert "multipart/x-mixed-replace" in response.media_type
 
     frames = asyncio.run(_collect_frames(response.body_iterator, max_frames=2))
     assert len(frames) == 2
     assert b"--frame" in frames[0] and b"image/jpeg" in frames[0]
+
+
+def test_video_feed_waits_instead_of_serving_stale_frame(client, monkeypatch):
+    """A cached JPEG must not be emitted for a disconnected/stale source."""
+    import asyncio
+    import time
+
+    module = sys.modules["kaal_server_under_test"]
+    monkeypatch.setattr(module, "OPERATING_MODE", "LIVE")
+    monkeypatch.setattr(module.state, "camera_connected", False)
+    monkeypatch.setattr(module, "latest_frame", b"stale-jpeg")
+    monkeypatch.setattr(
+        module,
+        "latest_data",
+        {**module.latest_data, "frame_timestamp": time.time() - 10.0},
+    )
+    response = asyncio.run(module.video_feed())
+    assert "multipart/x-mixed-replace" in response.media_type
+
+    async def first_chunk_times_out():
+        with pytest.raises(asyncio.TimeoutError):
+            await asyncio.wait_for(response.body_iterator.__anext__(), timeout=0.1)
+        await response.body_iterator.aclose()
+
+    asyncio.run(first_chunk_times_out())
 
 
 def test_health_endpoint(client):
