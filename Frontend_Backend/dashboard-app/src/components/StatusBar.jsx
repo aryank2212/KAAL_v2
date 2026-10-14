@@ -52,7 +52,7 @@ export default function StatusBar({
           }}
         />
         <span className="text-[9px] tracking-[3px] text-slate-500" style={{ fontFamily: "var(--font-display)" }}>
-          {attack ? "ALERT" : !isRunning ? "PAUSED" : `FEED ${feedStatus.toUpperCase()}`}
+          {attack ? "FLAGGED" : !isRunning ? "PAUSED" : `FEED ${feedStatus.toUpperCase()}`}
         </span>
         {connected && (
           <span className="text-[8px] tracking-[2px] text-cyan-400/70" style={{ fontFamily: "var(--font-mono)" }}>
