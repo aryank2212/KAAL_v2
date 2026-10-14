@@ -144,7 +144,6 @@ function App() {
               feedStatus={feedStatus}
               detectorStatus={detectorStatus}
               modelLoaded={modelLoaded}
-              swarmData={swarmData}
               onSwarmData={setSwarmTelemetry}
               detections={detections}
               attack={attack}
