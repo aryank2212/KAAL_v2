@@ -144,7 +144,9 @@ def _resolve_operating_mode(enable_camera: bool, source_is_file: bool) -> str:
     return "LIVE"
 
 
-OPERATING_MODE = _resolve_operating_mode(ENABLE_CAMERA, SOURCE_IS_FILE)
+OPERATING_MODE = _resolve_operating_mode(
+    ENABLE_CAMERA, SOURCE_IS_FILE
+)
 
 # Distance estimation constants.
 KNOWN_WIDTHS: Dict[str, float] = {
@@ -711,16 +713,20 @@ def _decorate_snapshot(snapshot: Dict[str, Any]) -> Dict[str, Any]:
         health_status = "degraded"
     else:
         health_status = "ready"
-    payload.update({
-        "operating_mode": OPERATING_MODE,
-        "feed_status": feed_status,
-        "frame_age_ms": frame_age_ms,
-        "camera_connected": state.camera_connected,
-        "model_loaded": state.model_loaded,
-        "detector_status": detector_status,
-        "health_status": health_status,
-        "detector": dict(state.detector_info) if state.detector_info else payload.get("detector"),
-    })
+    payload.update(
+        {
+            "operating_mode": OPERATING_MODE,
+            "feed_status": feed_status,
+            "frame_age_ms": frame_age_ms,
+            "camera_connected": state.camera_connected,
+            "model_loaded": state.model_loaded,
+            "detector_status": detector_status,
+            "health_status": health_status,
+            "detector": dict(state.detector_info)
+            if state.detector_info
+            else payload.get("detector"),
+        }
+    )
     return payload
 
 
