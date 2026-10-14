@@ -53,6 +53,10 @@ function App() {
   const flaggedCount = snapshot?.flagged_count ?? 0;
   const temporal = snapshot?.temporal ?? null;
   const detector = snapshot?.detector ?? null;
+  const operatingMode = snapshot?.operating_mode ?? "INITIALIZING";
+  const feedStatus = snapshot?.feed_status ?? "waiting";
+  const detectorStatus = snapshot?.detector_status ?? "initializing";
+  const modelLoaded = snapshot?.model_loaded ?? false;
   const fftThreshold = snapshot?.fft_threshold ?? settings.fft_threshold;
   const swarmData = {
     ...swarmTelemetry,
@@ -125,6 +129,10 @@ function App() {
               flaggedCount={flaggedCount}
               temporal={temporal}
               detector={detector}
+              operatingMode={operatingMode}
+              feedStatus={feedStatus}
+              detectorStatus={detectorStatus}
+              modelLoaded={modelLoaded}
             />
           </div>
 
@@ -133,6 +141,10 @@ function App() {
               image={VIDEO_FEED}
               selectedModel={selectedModel}
               isRunning={isRunning}
+              operatingMode={operatingMode}
+              feedStatus={feedStatus}
+              detectorStatus={detectorStatus}
+              modelLoaded={modelLoaded}
               swarmData={swarmData}
               onSwarmData={setSwarmTelemetry}
               detections={detections}
