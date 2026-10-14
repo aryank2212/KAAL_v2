@@ -419,7 +419,7 @@ def annotate(
     if temporal is not None:
         txt = f"TMP: {temporal['score']:.4f}" if temporal["ready"] else "TMP: calibrating"
         cv2.putText(out, txt, (10, 85), cv2.FONT_HERSHEY_SIMPLEX, 0.6, color, 2)
-    status_text = "ADVERSARIAL ATTACK" if is_attack else "SYSTEM NOMINAL"
+    status_text = "ANOMALY FLAG - REVIEW" if is_attack else "NO ANOMALY FLAG"
     cv2.putText(out, status_text, (10, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.7, color, 2)
     if is_attack:
         h, w = out.shape[:2]
