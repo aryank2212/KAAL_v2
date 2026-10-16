@@ -37,6 +37,7 @@ Drones that **don't trust a single view blindly** and **don't depend on a centra
 | Model release on the Hugging Face Hub (gated, CC BY-NC 4.0) + verified download | ✅ `MODEL/publish_model.py`, `MODEL/fetch_weights.py` |
 | FastAPI backend (WebSocket stream, live settings, health, metrics) | ✅ `Frontend_Backend/backend/server.py` |
 | React tactical dashboard | ✅ `Frontend_Backend/dashboard-app/` |
+| Runtime mode/feed health, detector readiness and stale-feed regression test | ✅ `Frontend_Backend/backend/server.py`, dashboard, `tests/integration/test_server.py` |
 | Swarm flocking | ⚙️ Hand-coded boid rules (dashboard canvas + `SCRIPTS/kaal_swarm.py`) |
 | MAPPO swarm policy, PyBullet/Gazebo sim, thermal/IR fallback | 🗺️ Planned — see `roadmap.md` (Phase 6) |
 
@@ -55,7 +56,7 @@ V3 priorities:
 5. **Deployment security:** require authentication for exposed settings endpoints, validate configuration, and test stale-feed and reconnect behavior.
 6. **Reproducible promotion gates:** record dataset/version provenance, class mapping, model hash, clean and perturbed metrics, false-flag rate, latency, and memory. Do not promote a model solely because one aggregate metric improves.
 
-Suggested first milestone: add explicit operating-mode and detector-health fields to the backend contract, reflect them in the dashboard, and cover fallback/stale-feed behavior with regression tests. Keep V3 focused on monitoring, robustness evaluation, and simulation; consequential decisions remain human-approved.
+Implemented in the current V3 hardening pass: the API reports `operating_mode` (`LIVE`, `REPLAY`, `SIMULATION`), `feed_state` (`CONNECTED`, `INITIALIZING`, `STALE`, `NO_SIGNAL`, `SIMULATED`), detector health (`READY`, `DEMO`, `INITIALIZING`), and frame age. The dashboard consumes those fields instead of treating cosmetic model labels as the running detector, marks lost/stale feeds, and no longer invents GPS, altitude, speed, or orbit telemetry. A regression test covers mode selection and stale-feed transitions. Keep V3 focused on monitoring, robustness evaluation, and simulation; consequential decisions remain human-approved.
 
 ---
 
@@ -86,6 +87,12 @@ Camera frame
 | Latency (RTX 4060, FP32, batch 1) | 17.1 ms | 7.5 ms |
 
 RF-DETR is therefore the production detector (`Docs/DECISIONS.md`, ADR-001); YOLO stays available (`KAAL_DETECTOR=yolo`) for speed-critical edge targets.
+
+### Runtime truth contract — V3 hardening
+
+The backend is the source of truth for telemetry mode. `operating_mode` is `LIVE` for a configured camera/stream, `REPLAY` for a configured video file, or `SIMULATION` when camera capture is disabled. `feed_state` independently reports `CONNECTED`, `INITIALIZING`, `STALE`, `NO_SIGNAL`, or `SIMULATED`; a configured live source is not considered connected just because the dashboard or WebSocket is online. `/api/health` and `/api/python-data` expose this state along with `frame_age_seconds` and `detector_health`. `READY` means a detector loaded; `DEMO` means detector inference is unavailable and object detections will be empty.
+
+GPS, altitude, speed, orbit and sensor range are not connected telemetry in this repository and are displayed as unavailable rather than generated values. Detection `distance` remains a rough pinhole-style estimate from assumed object width and a fixed focal length; it is explicitly marked approximate and is not a calibrated range measurement.
 
 ### Production model — `rfdetr-small-v4`
 

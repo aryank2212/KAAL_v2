@@ -113,6 +113,7 @@ CAMERA_INDEX = _env_int("KAAL_CAMERA_INDEX", 0)
 # A file path or stream URL replaces the webcam; local video files loop (demo mode).
 CAMERA_SOURCE: int | str = _env_str("KAAL_CAMERA_SOURCE", "") or CAMERA_INDEX
 SOURCE_IS_FILE = isinstance(CAMERA_SOURCE, str) and Path(CAMERA_SOURCE).is_file()
+FEED_STALE_SECONDS = max(0.5, _env_float("KAAL_FEED_STALE_SECONDS", 2.5))
 ENABLE_CAMERA = _env_bool("KAAL_ENABLE_CAMERA", True)
 # Production RF-DETR (registry) -> stock COCO YOLO -> demo mode (DetectorAdapter).
 MODEL_PATH = _env_str(
@@ -206,14 +207,17 @@ class DetectorAdapter:
         self.model_path = model_path
         self.detector: Any = None
         self.is_fallback = True
+        self.fallback_reason: Optional[str] = None
         try:
             self.detector = load_detector(self.backend, model_path or None, rfdetr_size=RFDETR_SIZE)
             self.is_fallback = False
         except ImportError as exc:
+            self.fallback_reason = "detector runtime is unavailable"
             logger.warning(
                 "%s stack not installed (%s) — running in NO-DETECTOR demo mode", self.backend, exc
             )
         except Exception as exc:  # missing/corrupt weights should not kill the server
+            self.fallback_reason = "detector weights could not be loaded"
             logger.error(
                 "Could not load %s weights %s: %s — demo mode", self.backend, model_path, exc
             )
@@ -224,6 +228,8 @@ class DetectorAdapter:
             "backend": self.backend,
             "weights": Path(self.model_path).name if self.model_path else None,
             "fallback": self.is_fallback,
+            "health": "DEMO" if self.is_fallback else "READY",
+            "fallback_reason": self.fallback_reason,
         }
 
     def predict(self, frame: np.ndarray, conf: float) -> List[Dict[str, Any]]:
@@ -250,6 +256,7 @@ state = AppState()
 
 # Legacy module globals kept so existing tests/integrations can seed frames.
 latest_frame: Optional[bytes] = None
+last_frame_at: Optional[float] = None  # wall-clock timestamp of the latest processed frame
 latest_data: Dict[str, Any] = {
     "status": "INITIALIZING",
     "noise_score": 0.0,
@@ -473,7 +480,7 @@ class CameraWorker:
                 state.camera_connected = False
 
     def _camera_loop(self, cap: cv2.VideoCapture) -> None:
-        global latest_frame, latest_data
+        global latest_frame, latest_data, last_frame_at
         # Pace video files at their native frame rate (webcams pace themselves).
         frame_interval = 1.0 / (cap.get(cv2.CAP_PROP_FPS) or 25.0) if SOURCE_IS_FILE else 0.0
         rewinds = 0
@@ -503,8 +510,11 @@ class CameraWorker:
             elapsed = (time.time() - t0) * 1000.0
             self._last_latency_ms = 0.8 * self._last_latency_ms + 0.2 * elapsed
 
+            frame_timestamp = time.time()
+            snapshot["frame_timestamp"] = frame_timestamp
             with latest_data_lock:
                 latest_data = snapshot
+                last_frame_at = frame_timestamp
             self._emit(snapshot)
             if frame_interval:
                 self._stop.wait(max(0.0, frame_interval - (time.time() - t0)))
@@ -533,6 +543,7 @@ class CameraWorker:
                     "conf": round(float(det["confidence"]), 3),
                     "bbox": [round(float(v), 1) for v in (x1, y1, x2, y2)],
                     "distance": round(estimate_distance(x2 - x1, real_width) / 100.0, 2),
+                    "distance_is_approximate": True,
                     "anomaly_score": None,
                     "is_adversarial": False,
                 }
@@ -648,9 +659,49 @@ async def _broadcast_loop() -> None:
                 state.clients.discard(ws)
 
 
+def _configured_operating_mode() -> str:
+    """Describe the configured source, never infer real telemetry from UI state."""
+    if not ENABLE_CAMERA:
+        return "SIMULATION"
+    if SOURCE_IS_FILE:
+        return "REPLAY"
+    if isinstance(CAMERA_SOURCE, str) and not CAMERA_SOURCE.lower().startswith(
+        ("http://", "https://", "rtsp://", "rtsps://")
+    ):
+        # A string source that is not a stream URL is intended to be a file,
+        # including when the file is currently missing.
+        return "REPLAY"
+    return "LIVE"
+
+
 def _snapshot() -> Dict[str, Any]:
     with latest_data_lock:
-        return latest_data
+        snap = dict(latest_data)
+        frame_at = last_frame_at
+
+    now = time.time()
+    frame_age = max(0.0, now - frame_at) if frame_at is not None else None
+    operating_mode = _configured_operating_mode()
+
+    if operating_mode == "SIMULATION":
+        feed_state = "SIMULATED"
+    elif not state.camera_connected:
+        feed_state = "NO_SIGNAL"
+    elif frame_at is None:
+        feed_state = "INITIALIZING"
+    elif frame_age is not None and frame_age > FEED_STALE_SECONDS:
+        feed_state = "STALE"
+    else:
+        feed_state = "CONNECTED"
+
+    detector = dict(state.detector_info or snap.get("detector") or {})
+    snap["operating_mode"] = operating_mode
+    snap["feed_state"] = feed_state
+    snap["frame_timestamp"] = frame_at
+    snap["frame_age_seconds"] = round(frame_age, 2) if frame_age is not None else None
+    snap["detector"] = detector
+    snap["detector_health"] = detector.get("health", "INITIALIZING")
+    return snap
 
 
 def _origin_allowed(origin: Optional[str], host: Optional[str]) -> bool:
@@ -676,7 +727,11 @@ async def health() -> Dict[str, Any]:
     temporal = state.worker.temporal if state.worker is not None else None
     return {
         "status": "ok",
-        "mode": snap["status"],
+        "mode": snap["operating_mode"],
+        "operating_mode": snap["operating_mode"],
+        "feed_state": snap["feed_state"],
+        "frame_age_seconds": snap["frame_age_seconds"],
+        "detector_health": snap["detector_health"],
         "is_attack": snap["is_attack"],
         "camera": state.camera_connected,
         "model_loaded": state.model_loaded,

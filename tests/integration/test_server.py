@@ -88,7 +88,7 @@ def test_health_endpoint(client):
     resp = client.get("/api/health")
     assert resp.status_code == 200
     body = resp.json()
-    for key in ("status", "mode", "is_attack", "camera", "model_loaded", "fft_threshold", "uptime"):
+    for key in ("status", "mode", "operating_mode", "feed_state", "frame_age_seconds", "detector_health", "is_attack", "camera", "model_loaded", "fft_threshold", "uptime"):
         assert key in body
     assert body["status"] == "ok"
     assert body["model_loaded"] is True
@@ -280,3 +280,52 @@ def test_metrics_sampler_throttles_nvidia_smi(monkeypatch):
         metrics = sampler.sample(latency_ms=12.5)
     assert len(calls) == 1
     assert metrics["latency"] == 12.5
+
+
+def test_operating_mode_and_feed_freshness_are_explicit(client):
+    """The API distinguishes configured source type from actual feed freshness."""
+    import time
+
+    module = _server()
+    original = (
+        module.ENABLE_CAMERA,
+        module.SOURCE_IS_FILE,
+        module.state.camera_connected,
+        module.last_frame_at,
+    )
+    try:
+        module.ENABLE_CAMERA = False
+        module.SOURCE_IS_FILE = False
+        module.state.camera_connected = False
+        module.last_frame_at = None
+        payload = module._snapshot()
+        assert payload["operating_mode"] == "SIMULATION"
+        assert payload["feed_state"] == "SIMULATED"
+
+        module.ENABLE_CAMERA = True
+        module.SOURCE_IS_FILE = True
+        module.state.camera_connected = True
+        module.last_frame_at = time.time()
+        payload = module._snapshot()
+        assert payload["operating_mode"] == "REPLAY"
+        assert payload["feed_state"] == "CONNECTED"
+
+        module.SOURCE_IS_FILE = False
+        module.last_frame_at = time.time()
+        payload = module._snapshot()
+        assert payload["operating_mode"] == "LIVE"
+        assert payload["feed_state"] == "CONNECTED"
+        assert payload["frame_age_seconds"] is not None
+
+        module.last_frame_at = time.time() - module.FEED_STALE_SECONDS - 1
+        assert module._snapshot()["feed_state"] == "STALE"
+
+        module.state.camera_connected = False
+        assert module._snapshot()["feed_state"] == "NO_SIGNAL"
+    finally:
+        (
+            module.ENABLE_CAMERA,
+            module.SOURCE_IS_FILE,
+            module.state.camera_connected,
+            module.last_frame_at,
+        ) = original
