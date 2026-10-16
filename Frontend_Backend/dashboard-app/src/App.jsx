@@ -156,7 +156,6 @@ function App() {
           <div className="col-span-4 flex flex-col gap-3 overflow-hidden">
             <div className="flex-1 glass min-h-0">
               <Controls
-                setSelectedModel={setSelectedModel}
                 isRunning={isRunning}
                 setIsRunning={setIsRunning}
                 systemMetrics={systemMetrics}

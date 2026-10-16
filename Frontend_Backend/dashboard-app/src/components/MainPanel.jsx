@@ -121,7 +121,7 @@ function MainPanel({
           </span>
         </div>
 
-        {/* SAT-LINK badge */}
+        {/* Source status badge */}
         <div className="absolute top-3 right-10 flex items-center gap-2 px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20">
           <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
           <span className="text-[9px] tracking-wider text-blue-300" style={{ fontFamily: "var(--font-display)" }}>

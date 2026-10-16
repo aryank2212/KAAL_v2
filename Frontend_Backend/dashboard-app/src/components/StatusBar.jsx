@@ -82,7 +82,7 @@ export default function StatusBar({
       <div className="flex items-center gap-1.5">
         <div className="w-1 h-1 rounded-full bg-red-400/50" />
         <span className="text-[8px] tracking-[2px] text-slate-600" style={{ fontFamily: "var(--font-display)" }}>
-          KAAL v2.4.1
+          KAAL V3 TRACK
         </span>
       </div>
     </motion.div>

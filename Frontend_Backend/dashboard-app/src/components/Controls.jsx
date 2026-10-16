@@ -1,24 +1,23 @@
-// Controls — start / stop the live pipeline view (isRunning), quick model-label
-// buttons, and the real CPU load from the backend's systemMetrics.
-import { useState } from "react";
+// Controls — pauses/resumes this browser's dashboard stream only.
+// The backend camera worker continues running while the view is paused.
+import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 
-function Controls({ setSelectedModel, isRunning, setIsRunning, systemMetrics }) {
-  const [activeBtn, setActiveBtn] = useState(isRunning ? "start" : "stop");
+function Controls({ isRunning, setIsRunning, systemMetrics }) {
+  const [activeBtn, setActiveBtn] = useState(isRunning ? "resume" : "pause");
 
-  const handleStart = () => {
+  useEffect(() => {
+    setActiveBtn(isRunning ? "resume" : "pause");
+  }, [isRunning]);
+
+  const handleResume = () => {
     setIsRunning(true);
-    setActiveBtn("start");
+    setActiveBtn("resume");
   };
 
-  const handleStop = () => {
+  const handlePause = () => {
     setIsRunning(false);
-    setActiveBtn("stop");
-  };
-
-  const handleReset = () => {
-    setActiveBtn("reset");
-    setTimeout(() => setActiveBtn(isRunning ? "start" : "stop"), 500);
+    setActiveBtn("pause");
   };
 
   return (
@@ -28,74 +27,45 @@ function Controls({ setSelectedModel, isRunning, setIsRunning, systemMetrics }) 
       transition={{ duration: 0.5, delay: 0.3 }}
       className="h-full flex flex-col"
     >
-      {/* Header */}
       <div className="panel-header">
-        <h3 className="panel-title">CONTROL SYSTEM</h3>
+        <h3 className="panel-title">DASHBOARD STREAM</h3>
         <div className="panel-dot" />
       </div>
 
-      {/* Model selector */}
-      <div className="relative mb-3">
-        <label className="text-[8px] tracking-[2px] text-slate-600 block mb-1.5" style={{ fontFamily: "var(--font-display)" }}>
-          TARGET MODEL
-        </label>
-        <div className="relative">
-          <select
-            onChange={(e) => setSelectedModel(e.target.value)}
-            className="w-full p-2.5 bg-[#060a12] border border-blue-500/15 rounded-lg text-[11px] tracking-wider focus:outline-none focus:border-blue-500/40 transition-colors"
-            style={{ fontFamily: "var(--font-mono)" }}
-          >
-            <option value="Model 1">QUANTUM-V1 — Neural Mesh</option>
-            <option value="Model 2">HELIX-V2 — Deep Resonance</option>
-            <option value="Model 3">ATLAS-V3 — Spatial Map</option>
-          </select>
-          {/* Custom arrow */}
-          <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none">
-            <svg className="w-3 h-3 text-slate-500" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
-              <path strokeLinecap="round" strokeLinejoin="round" d="M19 9l-7 7-7-7" />
-            </svg>
-          </div>
-        </div>
-      </div>
+      <p className="text-[9px] leading-relaxed text-slate-500 mb-3">
+        These controls pause or resume updates in this browser. They do not start or stop the backend camera or inference worker.
+      </p>
 
-      {/* Control buttons */}
       <div className="flex gap-2 mb-4">
         <ControlButton
           icon="▶"
-          label="START"
+          label="RESUME VIEW"
           color="emerald"
-          isActive={activeBtn === "start"}
-          onClick={handleStart}
+          isActive={activeBtn === "resume"}
+          onClick={handleResume}
         />
         <ControlButton
-          icon="■"
-          label="STOP"
+          icon="Ⅱ"
+          label="PAUSE VIEW"
           color="rose"
-          isActive={activeBtn === "stop"}
-          onClick={handleStop}
-        />
-        <ControlButton
-          icon="↺"
-          label="RESET"
-          color="amber"
-          isActive={activeBtn === "reset"}
-          onClick={handleReset}
+          isActive={activeBtn === "pause"}
+          onClick={handlePause}
         />
       </div>
 
-      {/* Metrics row */}
       <div className="flex-1" />
       <div className="flex items-end justify-between">
         <div>
           <p className="metric text-xl">{Math.round(systemMetrics?.cpu ?? 0)}%</p>
-          <p className="metric-label">CPU LOAD</p>
+          <p className="metric-label">HOST CPU</p>
         </div>
         <div className="text-right">
-          <p className="text-sm font-medium text-emerald-400" style={{ fontFamily: "var(--font-mono)" }}>
-            {isRunning ? "RUNNING" : "STOPPED"}
+          <p className={`text-sm font-medium ${isRunning ? "text-emerald-400" : "text-amber-300"}`}
+             style={{ fontFamily: "var(--font-mono)" }}>
+            {isRunning ? "VIEW ACTIVE" : "VIEW PAUSED"}
           </p>
           <p className="text-[8px] tracking-[2px] text-slate-600" style={{ fontFamily: "var(--font-display)" }}>
-            SIM STATE
+            CLIENT STATE
           </p>
         </div>
       </div>
@@ -117,14 +87,7 @@ function ControlButton({ icon, label, color, isActive, onClick }) {
       text: isActive ? "text-rose-300" : "text-slate-500",
       glow: isActive ? "shadow-[0_0_15px_rgba(244,63,94,0.15)]" : "",
     },
-    amber: {
-      bg: isActive ? "bg-amber-500/10" : "bg-transparent",
-      border: isActive ? "border-amber-500/40" : "border-blue-500/15",
-      text: isActive ? "text-amber-300" : "text-slate-500",
-      glow: isActive ? "shadow-[0_0_15px_rgba(251,191,36,0.15)]" : "",
-    },
   };
-
   const c = colorMap[color];
 
   return (
@@ -141,4 +104,4 @@ function ControlButton({ icon, label, color, isActive, onClick }) {
   );
 }
 
-export default Controls;
+export default Controls;
