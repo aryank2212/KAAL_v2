@@ -88,7 +88,19 @@ def test_health_endpoint(client):
     resp = client.get("/api/health")
     assert resp.status_code == 200
     body = resp.json()
-    for key in ("status", "mode", "operating_mode", "feed_state", "frame_age_seconds", "detector_health", "is_attack", "camera", "model_loaded", "fft_threshold", "uptime"):
+    for key in (
+        "status",
+        "mode",
+        "operating_mode",
+        "feed_state",
+        "frame_age_seconds",
+        "detector_health",
+        "is_attack",
+        "camera",
+        "model_loaded",
+        "fft_threshold",
+        "uptime",
+    ):
         assert key in body
     assert body["status"] == "ok"
     assert body["model_loaded"] is True
