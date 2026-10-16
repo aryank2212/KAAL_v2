@@ -1,9 +1,8 @@
-// Navbar — top bar: clock / date, pipeline state and network throughput
-// (systemMetrics.bandwidth, KB/s).
+// Navbar — clock/date plus detector health, source mode, feed freshness and network telemetry.
 import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 
-export default function Navbar({ systemMetrics, isRunning }) {
+export default function Navbar({ systemMetrics, operatingMode = "INITIALIZING", feedState = "INITIALIZING", detectorHealth = "INITIALIZING" }) {
   const [time, setTime] = useState(new Date());
 
   useEffect(() => {
@@ -13,6 +12,11 @@ export default function Navbar({ systemMetrics, isRunning }) {
 
   const formatTime = (d) =>
     d.toLocaleTimeString("en-US", { hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  const feedAvailable = feedState === "CONNECTED" || feedState === "SIMULATED";
+  const detectorColor = detectorHealth === "READY" ? "emerald" : detectorHealth === "DEMO" ? "amber" : "red";
+  const feedColor = feedAvailable ? "emerald" : feedState === "STALE" ? "amber" : "red";
+  const sourceColor = operatingMode === "LIVE" ? "emerald" : operatingMode === "REPLAY" ? "cyan" : operatingMode === "SIMULATION" ? "amber" : "red";
+
   const formatDate = (d) =>
     d.toLocaleDateString("en-US", { year: "numeric", month: "short", day: "2-digit" }).toUpperCase();
 
@@ -51,23 +55,24 @@ export default function Navbar({ systemMetrics, isRunning }) {
           >
             KAAL
           </h1>
-          <p className="text-[8px] tracking-[3px] text-slate-500 -mt-0.5">SIMULATION COMMAND</p>
+          <p className="text-[8px] tracking-[3px] text-slate-500 -mt-0.5">PERCEPTION MONITOR</p>
         </div>
       </div>
 
       {/* Center — Status Indicators */}
       <div className="flex items-center gap-6">
-        <NavIndicator label="SYS" value="NOMINAL" color="emerald" />
+        <NavIndicator label="SYS" value={detectorHealth} color={detectorColor} />
         <NavIndicator label="NET" value={`${Math.round(systemMetrics.bandwidth)} KB/s`} color="cyan" />
-        <NavIndicator label="SIM" value={isRunning ? "ACTIVE" : "PAUSED"} color={isRunning ? "red" : "amber"} />
+        <NavIndicator label="SRC" value={operatingMode} color={sourceColor} />
+        <NavIndicator label="FEED" value={feedState} color={feedColor} />
 
         {/* Divider */}
         <div className="w-px h-5 bg-red-500/15" />
 
         <div className="flex items-center gap-2">
-          <div className={`w-1.5 h-1.5 rounded-full ${isRunning ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-amber-400 shadow-[0_0_6px_rgba(251,191,36,0.6)]'}`} />
+          <div className={`w-1.5 h-1.5 rounded-full ${feedAvailable ? 'bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]' : 'bg-rose-400 shadow-[0_0_6px_rgba(244,63,94,0.6)]'}`} />
           <span className="text-[10px] tracking-widest text-slate-400" style={{ fontFamily: "var(--font-display)" }}>
-            {isRunning ? "ONLINE" : "STANDBY"}
+            {feedAvailable ? "FEED AVAILABLE" : "FEED UNAVAILABLE"}
           </span>
         </div>
       </div>

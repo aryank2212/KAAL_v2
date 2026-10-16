@@ -1,18 +1,18 @@
-// StatusBar — live readouts: flagged boxes, frame FFT score vs threshold,
-// temporal cue (OFF / CALIB / residual), DETECTOR backend, connection state
-// and CPU / GPU / memory / latency / uptime from systemMetrics.
+// StatusBar — anomaly cues, actual detector health, source mode, feed freshness,
+// swarm mode, and CPU / GPU / memory / latency / uptime from systemMetrics.
 import { motion } from "motion/react";
 
 export default function StatusBar({
   systemMetrics,
-  isRunning,
   swarmData = {},
   connected = false,
   attack = false,
   fftThreshold = null,
   flaggedCount = 0,
   temporal = null,
-  detector = null,
+  operatingMode = "INITIALIZING",
+  feedState = "INITIALIZING",
+  detectorHealth = "INITIALIZING",
 }) {
   const noise = swarmData.noise_score || 0;
   const noiseHot = fftThreshold !== null && noise > fftThreshold;
@@ -22,8 +22,10 @@ export default function StatusBar({
     { label: "NOISE", value: typeof noise === "number" ? noise.toFixed(3) : 0, color: noiseHot ? "#f43f5e" : "#fbbf24", icon: "⚡" },
     { label: "THRESH", value: fftThreshold !== null ? fftThreshold.toFixed(3) : "—", color: "#22d3ee", icon: "⊘" },
     { label: "TEMPORAL", value: temporalValue, color: temporal?.flagged ? "#f43f5e" : "#a78bfa", icon: "◷" },
-    { label: "DETECTOR", value: detector ? (detector.fallback ? "DEMO" : detector.backend.toUpperCase()) : "—", color: detector?.fallback ? "#fbbf24" : "#cbd5e1", icon: "◉" },
-    { label: "MODE", value: swarmData.mode || "NORMAL", color: swarmData.mode === "KAAL" ? "#22d3ee" : "#cbd5e1", icon: "⏣" },
+    { label: "DETECTOR", value: detectorHealth, color: detectorHealth === "READY" ? "#34d399" : detectorHealth === "DEMO" ? "#fbbf24" : "#f43f5e", icon: "◉" },
+    { label: "SOURCE", value: operatingMode, color: operatingMode === "LIVE" ? "#34d399" : operatingMode === "REPLAY" ? "#22d3ee" : operatingMode === "SIMULATION" ? "#fbbf24" : "#cbd5e1", icon: "⌁" },
+    { label: "FEED", value: feedState, color: feedState === "CONNECTED" || feedState === "SIMULATED" ? "#34d399" : feedState === "STALE" ? "#fbbf24" : "#f43f5e", icon: "⦿" },
+    { label: "SWARM", value: swarmData.mode || "NORMAL", color: swarmData.mode === "KAAL" ? "#22d3ee" : "#cbd5e1", icon: "⏣" },
     { label: "CPU", value: `${Math.round(systemMetrics.cpu)}%`, color: systemMetrics.cpu > 80 ? "#f43f5e" : "#22d3ee", icon: "⬡" },
     { label: "MEM", value: `${Math.round(systemMetrics.memory)}%`, color: systemMetrics.memory > 85 ? "#f43f5e" : "#3b82f6", icon: "◈" },
     { label: "GPU", value: systemMetrics.gpu !== null && systemMetrics.gpu !== undefined ? `${Math.round(systemMetrics.gpu)}%` : "N/A", color: systemMetrics.gpu > 80 ? "#fbbf24" : "#34d399", icon: "◇" },
@@ -43,12 +45,12 @@ export default function StatusBar({
         <div
           className="w-1.5 h-4 rounded-full"
           style={{
-            background: attack ? "#f43f5e" : isRunning ? "#34d399" : "#fbbf24",
-            boxShadow: `0 0 8px ${attack ? "rgba(244,63,94,0.7)" : isRunning ? "rgba(52,211,153,0.5)" : "rgba(251,191,36,0.5)"}`,
+            background: attack ? "#f43f5e" : feedState === "CONNECTED" || feedState === "SIMULATED" ? "#34d399" : "#fbbf24",
+            boxShadow: `0 0 8px ${attack ? "rgba(244,63,94,0.7)" : feedState === "CONNECTED" || feedState === "SIMULATED" ? "rgba(52,211,153,0.5)" : "rgba(251,191,36,0.5)"}`,
           }}
         />
         <span className="text-[9px] tracking-[3px] text-slate-500" style={{ fontFamily: "var(--font-display)" }}>
-          {attack ? "ATTACK" : isRunning ? "LIVE" : "IDLE"}
+          {attack ? "ANOMALY" : feedState}
         </span>
         {connected && (
           <span className="text-[8px] tracking-[2px] text-cyan-400/70" style={{ fontFamily: "var(--font-mono)" }}>

@@ -1,35 +1,24 @@
 // MainPanel — centre view: the annotated camera feed (MJPEG /api/video_feed,
 // default) or, via the toggle button, the swarm simulation canvas; shows
 // detection tags, flagged boxes and a pulsing border while an alert is active.
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { motion } from "motion/react";
 import KaalSwarmCanvas from "./KaalSwarmCanvas";
 
 function MainPanel({
   image,
-  selectedModel,
-  isRunning,
-  swarmData = {},
+  operatingMode = "INITIALIZING",
+  feedState = "INITIALIZING",
+  detectorHealth = "INITIALIZING",
   onSwarmData,
   detections = [],
   attack = false,
   alertActive = false,
 }) {
   const [isVideo, setIsVideo] = useState(false);
-  const [coords, setCoords] = useState({ lat: 28.6139, lon: 77.209 });
-
-  useEffect(() => {
-    if (!isRunning) return;
-    const interval = setInterval(() => {
-      setCoords((prev) => ({
-        lat: prev.lat + (Math.random() - 0.5) * 0.01,
-        lon: prev.lon + (Math.random() - 0.5) * 0.01,
-      }));
-    }, 2000);
-    return () => clearInterval(interval);
-  }, [isRunning]);
-
   const flagged = detections.filter((d) => d.is_adversarial);
+  const sourceLabel = isVideo ? "SIMULATION" : (feedState === "CONNECTED" ? operatingMode : feedState);
+  const sourceAvailable = isVideo || feedState === "CONNECTED";
 
   return (
     <motion.div
@@ -46,7 +35,7 @@ function MainPanel({
           </div>
           <div className="h-3 w-px bg-blue-500/20" />
           <span className="text-[9px] tracking-wider text-slate-600" style={{ fontFamily: "var(--font-mono)" }}>
-            {selectedModel.toUpperCase()}
+            {isVideo ? "SIMULATION CANVAS" : `${operatingMode} SOURCE`}
           </span>
         </div>
 
@@ -118,17 +107,17 @@ function MainPanel({
             className="live-dot"
             style={{
               width: 6, height: 6,
-              background: swarmData.status === 'ENGAGING' ? '#f43f5e' : (swarmData.status === 'JAMMED' ? '#fbbf24' : '')
+              background: attack ? '#f43f5e' : (sourceAvailable ? '#34d399' : '#fbbf24')
             }}
           />
           <span
             className="text-[10px] tracking-wider font-medium"
             style={{
               fontFamily: "var(--font-display)",
-              color: swarmData.status === 'ENGAGING' ? '#f43f5e' : (swarmData.status === 'JAMMED' ? '#fbbf24' : '#34d399')
+              color: attack ? '#f43f5e' : (sourceAvailable ? '#34d399' : '#fbbf24')
             }}
           >
-            {swarmData.status || "LIVE"}
+            {attack ? "ANOMALY FLAGGED" : sourceLabel}
           </span>
         </div>
 
@@ -136,25 +125,39 @@ function MainPanel({
         <div className="absolute top-3 right-10 flex items-center gap-2 px-2 py-0.5 rounded bg-blue-500/10 border border-blue-500/20">
           <div className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
           <span className="text-[9px] tracking-wider text-blue-300" style={{ fontFamily: "var(--font-display)" }}>
-            {swarmData.mode === 'KAAL' ? 'KAAL MESH ACTIVE' : 'STANDARD OPS'}
+            {isVideo ? 'SWARM SIMULATION' : 'GPS TELEMETRY UNAVAILABLE'}
           </span>
         </div>
 
         {/* Bottom data strip */}
         <div className="absolute bottom-0 left-0 right-0 flex items-center justify-between px-4 py-2 bg-gradient-to-t from-black/80 to-transparent">
           <div className="flex items-center gap-4">
-            <DataTag label="ALT" value="1,200 km" />
-            <DataTag label="LAT" value={coords.lat.toFixed(4)} />
-            <DataTag label="LON" value={coords.lon.toFixed(4)} />
+            <DataTag label="SOURCE" value={sourceLabel} />
+            <DataTag label="GPS" value="N/A" />
+            <DataTag label="ALT" value="N/A" />
           </div>
 
           <div className="flex items-center gap-4">
-            <DataTag label="SPD" value="27,400 km/h" />
-            <DataTag label="ORBIT" value="LEO-342" />
+            <DataTag label="SPD" value="N/A" />
+            <DataTag label="RANGE" value="N/A" />
           </div>
         </div>
 
-        {/* Top vignette */}
+        {!isVideo && !sourceAvailable && (
+        <div className="absolute inset-x-4 top-14 z-20 rounded-lg border border-amber-400/40 bg-black/85 px-4 py-3 text-center">
+          <p className="text-xs font-semibold tracking-widest text-amber-300">
+            {feedState === "STALE" ? "STALE FEED — VALUES MAY BE OUT OF DATE" :
+              feedState === "NO_SIGNAL" ? "NO CAMERA SIGNAL — DETECTIONS UNAVAILABLE" :
+                feedState === "SIMULATED" ? "CAMERA CAPTURE DISABLED — SELECT SIMULATION CANVAS" :
+                  "WAITING FOR A VALID FRAME"}
+          </p>
+          <p className="mt-1 text-[10px] text-slate-400">
+            Mode: {operatingMode} · Detector: {detectorHealth}
+          </p>
+        </div>
+      )}
+
+      {/* Top vignette */}
         <div className="absolute inset-0 bg-gradient-to-b from-black/30 via-transparent to-transparent pointer-events-none" />
 
         {/* ADVERSARIAL ALERT banner */}
@@ -166,7 +169,7 @@ function MainPanel({
           >
             <div className="w-2 h-2 rounded-full bg-white animate-ping" />
             <span className="text-[10px] tracking-[3px] font-bold text-white" style={{ fontFamily: "var(--font-display)" }}>
-              ADVERSARIAL ATTACK DETECTED
+              PERCEPTION ANOMALY FLAGGED — VERIFY
             </span>
           </motion.div>
         )}

@@ -1,5 +1,5 @@
 // App.jsx — root of the KAAL tactical dashboard.
-// Owns the run/stop state, the (cosmetic) model label and the live settings.
+// Owns dashboard run state, live settings, and backend source/detector health.
 // Everything else is derived from the latest backend snapshot delivered by
 // useDefenseSocket (WebSocket /ws, REST polling fallback): video feed,
 // detections, alert state (audio beep on alert onset), graphs and system
@@ -30,7 +30,6 @@ const EMPTY_METRICS = {
 };
 
 function App() {
-  const [selectedModel, setSelectedModel] = useState("Model 1");
   const [isRunning, setIsRunning] = useState(true);
   const [settings, setSettings] = useState({ fft_threshold: null, conf: 0.4 });
   // Swarm telemetry comes from the swarm canvas (alive / kia / mode); the
@@ -53,6 +52,9 @@ function App() {
   const flaggedCount = snapshot?.flagged_count ?? 0;
   const temporal = snapshot?.temporal ?? null;
   const detector = snapshot?.detector ?? null;
+  const operatingMode = snapshot?.operating_mode ?? "INITIALIZING";
+  const feedState = snapshot?.feed_state ?? "INITIALIZING";
+  const detectorHealth = snapshot?.detector_health ?? detector?.health ?? "INITIALIZING";
   const fftThreshold = snapshot?.fft_threshold ?? settings.fft_threshold;
   const swarmData = {
     ...swarmTelemetry,
@@ -104,36 +106,38 @@ function App() {
 
   return (
     <div className="app flex flex-col h-screen overflow-hidden text-white">
-      <Navbar systemMetrics={systemMetrics} isRunning={isRunning} />
+      <Navbar systemMetrics={systemMetrics} operatingMode={operatingMode} feedState={feedState} detectorHealth={detectorHealth} />
 
       <div className="flex flex-1 overflow-hidden">
         <Sidebar
-          selectedModel={selectedModel}
-          setSelectedModel={setSelectedModel}
           systemMetrics={systemMetrics}
+          detector={detector}
+          detectorHealth={detectorHealth}
+          feedState={feedState}
         />
 
         <div className="flex-1 grid grid-cols-8 grid-rows-[auto_2fr_1fr_auto] gap-3 p-3 overflow-hidden">
           <div className="col-span-8">
             <StatusBar
               systemMetrics={systemMetrics}
-              isRunning={isRunning}
               swarmData={swarmData}
               connected={connected}
               attack={attack}
               fftThreshold={fftThreshold}
               flaggedCount={flaggedCount}
               temporal={temporal}
-              detector={detector}
+              operatingMode={operatingMode}
+              feedState={feedState}
+              detectorHealth={detectorHealth}
             />
           </div>
 
           <div className="col-span-6 row-span-2 glass active">
             <MainPanel
               image={VIDEO_FEED}
-              selectedModel={selectedModel}
-              isRunning={isRunning}
-              swarmData={swarmData}
+              operatingMode={operatingMode}
+              feedState={feedState}
+              detectorHealth={detectorHealth}
               onSwarmData={setSwarmTelemetry}
               detections={detections}
               attack={attack}
