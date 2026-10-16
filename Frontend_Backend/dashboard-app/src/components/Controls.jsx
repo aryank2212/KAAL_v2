@@ -1,23 +1,16 @@
 // Controls — pauses/resumes this browser's dashboard stream only.
 // The backend camera worker continues running while the view is paused.
-import { useState, useEffect } from "react";
 import { motion } from "motion/react";
 
 function Controls({ isRunning, setIsRunning, systemMetrics }) {
-  const [activeBtn, setActiveBtn] = useState(isRunning ? "resume" : "pause");
-
-  useEffect(() => {
-    setActiveBtn(isRunning ? "resume" : "pause");
-  }, [isRunning]);
+  const activeBtn = isRunning ? "resume" : "pause";
 
   const handleResume = () => {
     setIsRunning(true);
-    setActiveBtn("resume");
   };
 
   const handlePause = () => {
     setIsRunning(false);
-    setActiveBtn("pause");
   };
 
   return (
