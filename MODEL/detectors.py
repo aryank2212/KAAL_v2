@@ -43,6 +43,10 @@ RFDETR_SIZES = {
     "large": "RFDETRLarge",
 }
 
+#: Label RF-DETR gives its extra no-object logit slot (index ``num_classes``).
+#: It is not a class: a query with this label is not an object.
+BACKGROUND_LABEL = "__background__"
+
 
 class Detector(Protocol):
     names: Dict[int, str]
@@ -119,15 +123,28 @@ class RFDETRDetector:
     def predict(self, image: np.ndarray, conf: float = 0.25) -> List[Dict[str, Any]]:
         rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)  # RF-DETR expects RGB
         dets = self.model.predict(rgb, threshold=conf)
+        # A fine-tuned RF-DETR has one extra no-object logit slot, at index
+        # num_classes. RF-DETR labels it in `class_name`; deriving the name from
+        # `model.class_names` instead would report a class that does not exist.
+        labels = getattr(dets, "data", {}).get("class_name")
         out = []
-        for box, score, cls_id in zip(dets.xyxy, dets.confidence, dets.class_id):
+        for index, (box, score, cls_id) in enumerate(
+            zip(dets.xyxy, dets.confidence, dets.class_id)
+        ):
             cls_id = int(cls_id)
+            name = None
+            if labels is not None and index < len(labels):
+                candidate = labels[index]
+                if isinstance(candidate, str) and candidate:
+                    name = candidate
+            if name == BACKGROUND_LABEL:
+                continue  # a no-object query is not a detection
             out.append(
                 {
                     "bbox": [float(v) for v in box],
                     "confidence": float(score),
                     "class_id": cls_id,
-                    "class_name": self.names.get(cls_id, str(cls_id)),
+                    "class_name": name or self.names.get(cls_id, str(cls_id)),
                 }
             )
         return out
