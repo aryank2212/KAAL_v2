@@ -45,20 +45,34 @@ that schema (`auairtools/auair.py`: `dataset['annotations']`, `dataset['categori
 
 ## 3. Download locations
 
-| What | Where | Published size |
-|---|---|---|
-| Frames (images) | Google Drive id `1pJ3xfKtHiTdysX5G3dxqKTdGESOBYCxJ` — <https://drive.google.com/open?id=1pJ3xfKtHiTdysX5G3dxqKTdGESOBYCxJ> | **2.2 GB** |
-| Annotations (JSON) | Google Drive id `1boGF0L6olGe_Nu7rd1R8N7YmQErCb0xA` — <https://drive.google.com/open?id=1boGF0L6olGe_Nu7rd1R8N7YmQErCb0xA> | **3.9 MB** |
+| What | Where | Published size | Actual |
+|---|---|---|---|
+| Frames (images) | Google Drive id `1pJ3xfKtHiTdysX5G3dxqKTdGESOBYCxJ` — <https://drive.google.com/open?id=1pJ3xfKtHiTdysX5G3dxqKTdGESOBYCxJ> | 2.2 GB | `frames.zip`, 2,318,071,652 bytes, ZIP of `images/` + 32,823 JPEGs |
+| Annotations (JSON) | Google Drive id `1boGF0L6olGe_Nu7rd1R8N7YmQErCb0xA` — <https://drive.google.com/open?id=1boGF0L6olGe_Nu7rd1R8N7YmQErCb0xA> | 3.9 MB | `annotations.json`, 4,039,375 bytes — **a ZIP, not raw JSON**, containing `annotations.json` (26,238,060 bytes) |
 
-Archive names are **not published** — upstream distributes loose files through
-Google Drive, not a named archive. Sizes are the figures from the official
-project page; the actual byte counts are recorded in the dataset manifest at
-build time and are not asserted here.
-
-Reachability check on 2026-10-21 (headers only, no file downloaded): both Drive
-ids returned HTTP 200.
+The archive names were **not published** upstream; the two names above are the
+names the Drive files carry. The annotations file in particular is published
+under a `.json` name but is a ZIP archive — a plain `json.load` on the
+downloaded file fails with a `UnicodeDecodeError`.
 
 Fetch with `gdown` against the public ids. No account, no key, no cookie.
+
+```bash
+gdown 1boGF0L6olGe_Nu7rd1R8N7YmQErCb0xA -O MODEL/Datasets/auair/annotations.json
+gdown --continue 1pJ3xfKtHiTdysX5G3dxqKTdGESOBYCxJ -O MODEL/Datasets/auair/frames.zip
+unzip -q MODEL/Datasets/auair/frames.zip -d MODEL/Datasets/auair
+unzip -q MODEL/Datasets/auair/annotations.json -d MODEL/Datasets/auair/extracted
+```
+
+SHA-256 of the two upstream downloads, as recorded in the dataset manifest:
+
+| Input | SHA-256 | Bytes |
+|---|---|---|
+| `annotations.json` (extracted) | `3bc6bf049e3430f4…` | 26,238,060 |
+| `frames.zip` | `bd31f8de50fd5418…` | 2,318,071,652 |
+| `annotations.json` (the ZIP) | `5cef55c2717b5fca…` | 4,039,375 |
+
+(The full digests are in `MODEL/Datasets/auair_civilian/manifest.json`.)
 
 ---
 
@@ -128,7 +142,7 @@ Each `annotations[i]`:
 | Field | Type | Meaning |
 |---|---|---|
 | `image_name` | str | JPEG file name, same directory as the frames |
-| `image_width`, `image_height` | float | frame size in pixels |
+| `image_width:`, `image_height` | float | frame size in pixels |
 | `platform` | str | UAV platform, e.g. `Parrot Bebop 2` |
 | `time` | object | `year, month, day, hour, min, sec, ms` |
 | `longtitude`, `latitude` | float | GPS (note upstream spelling `longtitude`) |
@@ -136,6 +150,11 @@ Each `annotations[i]`:
 | `linear_x`, `linear_y`, `linear_z` | float | body-frame velocity, m/s |
 | `angle_phi`, `angle_theta`, `angle_psi` | float | roll / pitch / yaw, radians |
 | `bbox` | list | object boxes |
+
+> **Released-file quirk:** the frame width key is spelled **`image_width:`**
+> with a trailing colon, in all 32,823 released records. The upstream sample
+> spells it `image_width`. A parser that reads only `image_width` sees no frame
+> size at all and cannot normalise a single box. The importer accepts both.
 
 Each `bbox[j]`: `top`, `left`, `height`, `width` in **pixels, top-left origin**
 and `class`, an **index into `categories`**.
@@ -218,10 +237,10 @@ No raw data, no checkpoint and no credential is ever committed.
 | Quantity | Value | Source |
 |---|---|---|
 | Source videos | 8 | project page, paper §III-B |
-| Extracted, labelled frames | **32,823** | project page, paper §I, §III-B |
+| Extracted, labelled frames | **32,823** | project page, paper §I, §III-B — **confirmed by the released file** |
 | — the API README says | **32,283** | `auairdataset` README — inconsistent with the two sources above; treated as a transposition typo |
-| Annotated object instances | 132,034 | paper §I |
-| Images | 1920×1080 | paper §III-A |
+| Annotated object instances | 132,034 | paper §I — the released file holds **132,031** boxes |
+| Images | 1920×1080 | paper §III-A — confirmed: every released record is 1920.0×1080.0 |
 | Frame extraction rate | 5 fps from 30 fps | paper §III-B |
 | Flight altitude range | 5–30 m | paper §III-B |
 | Camera angle range | 45°–90° | paper §III-B |
@@ -232,24 +251,62 @@ Upstream's own AP table (paper §IV-C) shows heavy class imbalance, with
 classes to be the weak point of any baseline here; do not read a low number for
 them as a bug in the pipeline.
 
+### What the released file actually contains
+
+Verified by building the dataset from the real archives on 2026-10-21:
+
+* 32,823 annotation records, one per frame; no duplicate `image_name`.
+* 8 source sequences, with 0 mismatches between the filename timestamp and the
+  `time` field — sequence identity is solid.
+* 132,031 boxes; **54 have a non-positive width or height** and are dropped by
+  the importer and reported in the manifest. No box is out of bounds and none
+  has a negative origin.
+* Per-class box counts: car 102,619 · van 9,995 · truck 9,545 · human 5,158 ·
+  trailer 2,538 · bicycle 1,128 · bus 729 · motorbike 319.
+* The paper's 132,034 instances is 3 more than the released 132,031. Unresolved;
+  the released number is the one used.
+
 ---
 
-## 9. Explicitly unresolved
+## 9. The built dataset
+
+`python -m MODEL.build_civilian_auair` produced `MODEL/Datasets/auair_civilian`
+on 2026-10-21. 32,823 frames, 131,977 usable boxes, 54 boxes dropped.
+
+| Split | Sequences | Frames | Instances |
+|---|---|---|---|
+| train | 6 | 18,997 | 67,744 |
+| val | 1 (`20190905103112`) | 6,840 | 23,241 |
+| test | 1 (`20190906150731`) | 6,986 | 40,851 |
+
+All eight classes appear in **every** split, including `motorbike`
+(train 91 / val 27 / test 200) and `bicycle` (466 / 37 / 625) — the two
+classes upstream's own baselines could barely detect. The sequences are
+disjoint: no video contributes frames to more than one split.
+
+The split is chosen greedily for class coverage (test first, then val), with
+the seed only breaking exact ties. With eight sequences the granularity is one
+whole video, so a split can only be as balanced as 6/1/1 or similar — the
+per-split counts above are the honest consequence of grouping, not a defect.
+
+---
+
+## 10. Explicitly unresolved
 
 * Which licence actually applies — see §4. The conflict between "CC-BY" on the
   project page and the annotation file's `CC BY-NC-SA 2.0` / `CC BY-NC 2.0`
   metadata is unresolved, and no upstream source was found that picks one.
 * Whether ShareAlike attaches to adapted forms.
-* Archive names and checksums — upstream publishes none; they are recorded at
-  build time instead.
-* Whether the released annotation file matches the sample schema exactly, in
-  particular the `categories` order. Verified against the upstream sample only.
-* Whether all 32,823 frames are present in the released archive, and whether
-  the released annotation file covers every frame.
+* Whether the paper's 132,034 instances or the released file's 132,031 is the
+  intended count, and where the 3-box difference is.
+* Whether upstream's own 60/10/30 frame-level split can be reproduced from the
+  released files. It cannot be used here regardless: it leaks adjacent frames.
+
+Archive names and checksums were not published upstream; the two Drive file
+names and their SHA-256 digests are recorded in the dataset manifest.
 
 ---
 
-## 10. Next step
+## 11. Next step
 
-`MODEL/build_civilian_auair.py` — the isolated importer (Task 3), then
 `MODEL/audit_civilian_dataset.py` — the read-only audit (Task 4).
