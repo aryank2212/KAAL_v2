@@ -32,12 +32,24 @@ class ManifestValidationError(ValueError):
     """Invalid or unsupported experiment manifest."""
 
 
+class BenchUsageError(ValueError):
+    """Invalid command-line usage of the bench CLI."""
+
+
 def sha256_file(path: str | Path) -> str:
     digest = hashlib.sha256()
     with Path(path).open("rb") as stream:
         for chunk in iter(lambda: stream.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def sha256_file_checked(path: str | Path, label: str) -> str:
+    """Hash a file that must exist, with a message that names the input."""
+    target = Path(path)
+    if not target.is_file():
+        raise FileNotFoundError(f"{label} does not exist or is not a file: {target}")
+    return sha256_file(target)
 
 
 def _git_commit(cwd: str | Path | None = None) -> str | None:
@@ -181,12 +193,18 @@ def capture_manifest(
         "git_commit": _git_commit(repository),
         "model": {
             "name": model_name,
-            "weights_sha256": sha256_file(model_weights) if model_weights else None,
+            "weights_sha256": (
+                sha256_file_checked(model_weights, "Model weights") if model_weights else None
+            ),
         },
         "dataset": {
             "registry_id": dataset_id,
             "split": split,
-            "manifest_sha256": sha256_file(dataset_manifest) if dataset_manifest else None,
+            "manifest_sha256": (
+                sha256_file_checked(dataset_manifest, "Dataset manifest")
+                if dataset_manifest
+                else None
+            ),
         },
         "protocol": {"seed": seed, "evaluation_version": evaluation_version},
         "environment": {
@@ -247,6 +265,49 @@ def render_markdown(manifest: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def parse_metric_option(option: str) -> tuple[str, float | int | None]:
+    """Parse a ``NAME=VALUE`` metric option; ``null`` means not measured."""
+    name, separator, raw = option.partition("=")
+    name = name.strip()
+    if not separator or not name:
+        raise BenchUsageError(f"Metric must be NAME=VALUE, got: {option!r}")
+    text = raw.strip()
+    if text.lower() in {"null", "none"}:
+        return name, None
+    try:
+        value: float | int = int(text)
+    except ValueError:
+        try:
+            value = float(text)
+        except ValueError as error:
+            raise BenchUsageError(
+                f"Metric {name!r} must be a finite number or null, got: {raw!r}"
+            ) from error
+    if isinstance(value, float) and not math.isfinite(value):
+        raise BenchUsageError(f"Metric {name!r} must be a finite number or null, got: {raw!r}")
+    return name, value
+
+
+def parse_metric_options(options: list[str]) -> dict[str, float | int | None]:
+    """Parse repeated ``--metric`` options; duplicate names are rejected."""
+    metrics: dict[str, float | int | None] = {}
+    for option in options:
+        name, value = parse_metric_option(option)
+        if name in metrics:
+            raise BenchUsageError(f"Metric {name!r} was given more than once")
+        metrics[name] = value
+    return metrics
+
+
+def write_text(path: str | Path, text: str) -> Path:
+    """Write a file, creating missing parent directories."""
+    target = Path(path)
+    if target.parent and not target.parent.exists():
+        target.parent.mkdir(parents=True, exist_ok=True)
+    target.write_text(text, encoding="utf-8")
+    return target
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description="KAAL experiment manifest tools")
     commands = parser.add_subparsers(dest="command", required=True)
@@ -260,6 +321,20 @@ def main() -> None:
     capture.add_argument("--weights", type=Path)
     capture.add_argument("--dataset-manifest", type=Path)
     capture.add_argument("--repository", type=Path)
+    capture.add_argument(
+        "--metric",
+        action="append",
+        default=[],
+        metavar="NAME=VALUE",
+        help="Record a measured metric; use null for a value that was not measured.",
+    )
+    capture.add_argument(
+        "--artifact",
+        action="append",
+        default=[],
+        type=Path,
+        help="Record a result file: path, SHA-256 and kind.",
+    )
     capture.add_argument("--output", required=True, type=Path)
     validate = commands.add_parser("validate")
     validate.add_argument("manifest", type=Path)
@@ -268,32 +343,42 @@ def main() -> None:
     report.add_argument("--output", type=Path)
     args = parser.parse_args()
 
-    if args.command == "capture":
-        result = capture_manifest(
-            run_id=args.run_id,
-            model_name=args.model_name,
-            dataset_id=args.dataset_id,
-            split=args.split,
-            seed=args.seed,
-            evaluation_version=args.evaluation_version,
-            model_weights=args.weights,
-            dataset_manifest=args.dataset_manifest,
-            repository=args.repository,
-        )
-        Path(args.output).write_text(canonical_json(result), encoding="utf-8")
-        print(f"Wrote {args.output}")
-        return
-    data = json.loads(args.manifest.read_text(encoding="utf-8"))
-    validate_manifest(data)
-    if args.command == "validate":
-        print(f"Valid schema-v{SCHEMA_VERSION} manifest: {args.manifest}")
-    else:
-        output = render_markdown(data)
-        if args.output:
-            args.output.write_text(output, encoding="utf-8")
+    try:
+        if args.command == "capture":
+            result = capture_manifest(
+                run_id=args.run_id,
+                model_name=args.model_name,
+                dataset_id=args.dataset_id,
+                split=args.split,
+                seed=args.seed,
+                evaluation_version=args.evaluation_version,
+                model_weights=args.weights,
+                dataset_manifest=args.dataset_manifest,
+                metrics=parse_metric_options(args.metric),
+                artifacts=list(args.artifact),
+                repository=args.repository,
+            )
+            write_text(args.output, canonical_json(result))
             print(f"Wrote {args.output}")
+            return
+        data = json.loads(args.manifest.read_text(encoding="utf-8"))
+        validate_manifest(data)
+        if args.command == "validate":
+            print(f"Valid schema-v{SCHEMA_VERSION} manifest: {args.manifest}")
         else:
-            sys.stdout.write(output)
+            output = render_markdown(data)
+            if args.output:
+                write_text(args.output, output)
+                print(f"Wrote {args.output}")
+            else:
+                sys.stdout.write(output)
+    except (
+        BenchUsageError,
+        ManifestValidationError,
+        FileNotFoundError,
+        json.JSONDecodeError,
+    ) as err:
+        parser.exit(2, f"bench: error: {err}\n")
 
 
 if __name__ == "__main__":
