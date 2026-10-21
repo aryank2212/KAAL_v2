@@ -34,6 +34,26 @@ class _FakeRFDETRModel:
         return _Dets()
 
 
+class _FakeRFDETRModelWithLabels:
+    """RF-DETR with the extra no-object logit slot, as a fine-tuned model has."""
+
+    class_names = ["aircraft", "tank"]
+
+    def __init__(self):
+        self.seen = None
+
+    def predict(self, image, threshold=0.5):
+        self.seen = (image.copy(), threshold)
+
+        class _Dets:
+            xyxy = np.array([[10.0, 20.0, 50.0, 60.0], [0.0, 0.0, 8.0, 8.0]])
+            confidence = np.array([0.8, 0.4])
+            class_id = np.array([1, 2])  # 2 == num_classes == the no-object slot
+            data = {"class_name": np.array(["tank", "__background__"], dtype=object)}
+
+        return _Dets()
+
+
 class TestInferBackend:
     @pytest.mark.parametrize(
         "path,expected",
@@ -70,6 +90,19 @@ class TestRFDETRDetector:
 
     def test_as_detector_wraps_bare_rfdetr_model(self):
         assert isinstance(as_detector(_FakeRFDETRModel()), RFDETRDetector)
+
+    def test_uses_rfdetr_class_name_instead_of_inventing_one(self):
+        """The no-object slot must not be reported under a class that does not exist."""
+        det = RFDETRDetector(_FakeRFDETRModelWithLabels())
+        out = det.predict(np.zeros((64, 64, 3), np.uint8), conf=0.3)
+        # The background query is not an object, so it is not a detection.
+        assert [d["class_name"] for d in out] == ["tank"]
+        assert [d["class_id"] for d in out] == [1]
+
+    def test_falls_back_to_class_names_when_rfdetr_gives_no_labels(self):
+        det = RFDETRDetector(_FakeRFDETRModel())
+        out = det.predict(np.zeros((64, 64, 3), np.uint8), conf=0.3)
+        assert [d["class_name"] for d in out] == ["tank"]
 
 
 class TestAsDetector:
