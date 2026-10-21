@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "run_id": "fixture-v4-baseline",
+  "git_commit": "0123456789abcdef0123456789abcdef01234567",
+  "model": {
+    "name": "rfdetr-small-v4",
+    "weights_sha256": null
+  },
+  "dataset": {
+    "registry_id": "kaal_v4",
+    "split": "test",
+    "manifest_sha256": null
+  },
+  "protocol": {
+    "seed": 42,
+    "evaluation_version": "1"
+  },
+  "environment": {
+    "python_version": "3.12.0",
+    "platform": "fixture-linux"
+  },
+  "metrics": {
+    "map50": 0,
+    "map50_95": null,
+    "latency_p95_ms": null
+  },
+  "artifacts": []
+}
