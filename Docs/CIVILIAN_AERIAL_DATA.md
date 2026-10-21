@@ -268,7 +268,64 @@ Verified by building the dataset from the real archives on 2026-10-21:
 
 ---
 
-## 9. The built dataset
+## 9. The audit
+
+`python -m MODEL.audit_civilian_dataset --data MODEL/Datasets/auair_civilian`
+is **read-only** — it corrects nothing. It reports, for human review:
+
+| Check | Result on the built dataset (2026-10-21) |
+|---|---|
+| Images audited | 32,823 |
+| Corrupt images | **0** |
+| Images with no label file | **0** |
+| Label problems | **3 empty label files** — each of those 3 frames has exactly one upstream box with width 0 and height 0, so the box was dropped and the frame has no objects left. Degenerate upstream annotations, not a pipeline fault. |
+| Out-of-range / unknown-class / non-positive boxes in the built labels | **0** — the importer already dropped all 54 bad upstream boxes |
+| Groups appearing in more than one split | **0** |
+| Exact-duplicate image groups (SHA-256) | **0** |
+| Exact-duplicate groups crossing splits | **0** |
+
+### One real leakage finding
+
+The near-duplicate scan (8×9 grayscale difference hash, Hamming distance ≤ 5)
+found **3,754,983 within-split pairs and 62 across-split pairs**, involving 45
+images in three videos:
+
+| Sequence | Split | Frames |
+|---|---|---|
+| `20190905111947` | train | 771 |
+| `20190905142119` | train | 2,962 |
+| `20190905103112` | val | 6,840 |
+
+All eight videos were filmed at the **same intersection** (Skejby
+Nordlandsvej / P.O Pedersensvej, Aarhus) on different days. The same parked
+vehicles and the same stretch of road therefore appear in more than one
+sequence, and a video-grouped split cannot separate them — the scene repeats,
+not the frame.
+
+**Consequence:** the val split is not perfectly independent of train. Report
+per-sequence results alongside the pooled numbers, and treat the val score as
+an optimistic estimate for a genuinely unseen location. The test sequence
+(`20190906150731`) is the only one with no near-duplicate partner in another
+split.
+
+The within-split count is enormous by construction — frames are extracted 5 per
+second, so consecutive frames are near-identical. It is redundancy, not
+leakage, and it is why the report states both counts and the threshold.
+
+### Near-duplicate limits, stated explicitly
+
+* Method: 8×9 grayscale difference hash on a half-scale decode.
+* Threshold: Hamming distance ≤ 5 of 64 bits. This is permissive on
+  aerial video; `--near-dup-max-distance` tightens it.
+* Cost: O(n²) in the number of images. `--near-dup-max-images` (default
+  60,000) bounds it; all 32,823 images were hashed here, so nothing was
+  skipped.
+* The `within_split_pairs` and `cross_split_pairs` **lists** are capped at 500
+  entries each; the `*_count` fields are the true totals.
+
+---
+
+## 10. The built dataset
 
 `python -m MODEL.build_civilian_auair` produced `MODEL/Datasets/auair_civilian`
 on 2026-10-21. 32,823 frames, 131,977 usable boxes, 54 boxes dropped.
@@ -291,7 +348,7 @@ per-split counts above are the honest consequence of grouping, not a defect.
 
 ---
 
-## 10. Explicitly unresolved
+## 11. Explicitly unresolved
 
 * Which licence actually applies — see §4. The conflict between "CC-BY" on the
   project page and the annotation file's `CC BY-NC-SA 2.0` / `CC BY-NC 2.0`
@@ -307,6 +364,8 @@ names and their SHA-256 digests are recorded in the dataset manifest.
 
 ---
 
-## 11. Next step
+## 12. Next step
 
-`MODEL/audit_civilian_dataset.py` — the read-only audit (Task 4).
+Task 5 — the civilian-only baseline. It needs the user's explicit go-ahead:
+a training run on this dataset is GPU-bound and takes hours, and its licence
+status (see §4) is unresolved.
