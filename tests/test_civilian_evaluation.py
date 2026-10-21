@@ -190,3 +190,67 @@ def test_read_split_reads_labels_and_names(tmp_path):
     assert [path.name for path in images] == ["frame_20190906150731_x_0000001.jpg"]
     assert class_names == CLASS_NAMES
     assert truth["frame_20190906150731_x_0000001.jpg"] == [(1, 0.5, 0.5, 0.2, 0.3)]
+
+
+def test_metrics_agree_with_the_repositorys_own_coco_engine():
+    """The evaluator must not report different numbers than compare_detectors.
+
+    ``MODEL.compare_detectors.coco_map`` is the engine behind the production
+    results, so the civilian evaluator has to reproduce it exactly.
+    """
+    from MODEL.compare_detectors import coco_map
+
+    truth = [
+        [
+            (1, 0.5, 0.5, 0.2, 0.2),
+            (0, 0.25, 0.3, 0.08, 0.1),
+            (6, 0.8, 0.7, 0.3, 0.15),
+        ],
+        [(3, 0.4, 0.6, 0.15, 0.12)],
+    ]
+    detections = [
+        [
+            {
+                "bbox": [40.0, 40.0, 60.0, 60.0],
+                "confidence": 0.9,
+                "class_id": 1,
+                "class_name": "car",
+            },
+            {
+                "bbox": [20.0, 25.0, 28.0, 35.0],
+                "confidence": 0.4,
+                "class_id": 0,
+                "class_name": "human",
+            },
+            {
+                "bbox": [0.0, 0.0, 5.0, 5.0],
+                "confidence": 0.6,
+                "class_id": 6,
+                "class_name": "bus",
+            },
+        ],
+        [
+            {
+                "bbox": [30.0, 54.0, 45.0, 66.0],
+                "confidence": 0.7,
+                "class_id": 3,
+                "class_name": "van",
+            }
+        ],
+    ]
+    sizes = [(100, 100), (100, 100)]
+
+    # The repository engine takes pixel boxes in COCO convention.
+    repo_truth = [
+        [
+            (class_id, [(cx - w / 2) * size[1], (cy - h / 2) * size[0], w * size[1], h * size[0]])
+            for class_id, cx, cy, w, h in boxes
+        ]
+        for boxes, size in zip(truth, sizes)
+    ]
+    repo = coco_map(repo_truth, detections, sizes, CLASS_NAMES)
+    mine = coco_evaluate(truth, detections, sizes, CLASS_NAMES, operating_conf=0.25)
+
+    assert mine["mAP50"] == repo["mAP50"]
+    assert mine["mAP50_95"] == repo["mAP50_95"]
+    assert mine["per_class_mAP50_95"] == repo["per_class_mAP50_95"]
