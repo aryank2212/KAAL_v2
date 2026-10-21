@@ -1,10 +1,15 @@
 """CPU-only contract tests for KAAL Bench manifest validation and reports."""
+
 import json
 from pathlib import Path
 import pytest
 from MODEL.bench import (
-    ManifestValidationError, canonical_json, capture_manifest,
-    render_markdown, sha256_file, validate_manifest,
+    ManifestValidationError,
+    canonical_json,
+    capture_manifest,
+    render_markdown,
+    sha256_file,
+    validate_manifest,
 )
 
 FIXTURE = Path(__file__).parent / "fixtures" / "benchmark_results" / "v1_manifest.json"
@@ -50,9 +55,16 @@ def test_capture_hashes_inputs_and_records_environment(tmp_path):
     artifact = tmp_path / "predictions.json"
     artifact.write_text('{"count": 0}\n', encoding="utf-8")
     data = capture_manifest(
-        run_id="cpu-fixture", model_name="test-model", dataset_id="fixture",
-        split="test", seed=42, model_weights=weights, dataset_manifest=dataset,
-        artifacts=[artifact], repository=tmp_path, metrics={"map50_95": None},
+        run_id="cpu-fixture",
+        model_name="test-model",
+        dataset_id="fixture",
+        split="test",
+        seed=42,
+        model_weights=weights,
+        dataset_manifest=dataset,
+        artifacts=[artifact],
+        repository=tmp_path,
+        metrics={"map50_95": None},
     )
     assert data["model"]["weights_sha256"] == sha256_file(weights)
     assert data["dataset"]["manifest_sha256"] == sha256_file(dataset)
