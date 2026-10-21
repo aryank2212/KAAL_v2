@@ -348,7 +348,67 @@ per-split counts above are the honest consequence of grouping, not a defect.
 
 ---
 
-## 11. Explicitly unresolved
+## 11. Smoke test — measured
+
+`python -m MODEL.train_detector` was exercised on a 300/150/150-image subset of
+the built dataset before any full run. Environment: RTX 4060 Laptop GPU
+(8,192 MiB, 7.70 GiB usable), torch 2.14.1+cu130, ultralytics 8.4.183,
+rfdetr (latest), Python 3.12.14.
+
+**Checks passed:** data loading, class names (`num_classes: 8`,
+`['human', 'car', 'truck', 'van', 'motorbike', 'bicycle', 'bus', 'trailer']`),
+checkpoint creation (`checkpoint_best_total.pth`), and inference through
+`MODEL/detectors.py:RFDETRDetector` (cars detected at confidence 0.51 / 0.38 /
+0.34 on a held-out test frame; 227.7 ms per 1920×1080 frame, unoptimised FP32).
+
+### Measured throughput
+
+| Resolution | Batch × accum | Peak VRAM | Train s/image | Val s/image | Per epoch | 10 epochs |
+|---|---|---|---|---|---|---|
+| 512 (default) | 4 × 4 | 4,166 MiB | 0.0511 | 0.0124 | ~17.6 min | **~3.0 h** |
+| 768 | 4 × 4 | 5,024–7,074 MiB | 0.0811 | 0.0239 | ~28.4 min | **~4.7 h** |
+| 1024 | 4 × 4 | 7,844 MiB | — | — | **CUDA OOM** | — |
+| 1024 | 2 × 8 | 4,912 MiB | 0.1311 | 0.0347 | ~45.5 min | **~7.7 h** |
+
+Per-image costs come from three measured one-epoch runs per configuration
+(300/1200 train images at fixed validation, plus 50 train / 1,500 validation),
+so the fixed setup cost and the per-image costs are separated rather than
+guessed. Epoch figures are for the full 18,997 train / 6,840 val split.
+
+Storage: **~2.9 GB per 10-epoch run** — five Lightning checkpoints
+(`checkpoint_interval = epochs // 4`) at 510 MB plus three 128 MB `.pth`
+files. Everything lands under `MODEL/runs/`, which is git-ignored.
+
+### One defect found while smoke-testing inference
+
+`MODEL/detectors.py:RFDETRDetector.predict` re-derives the label from
+`model.class_names` (`self.names.get(cls_id, str(cls_id))`). RF-DETR's
+fine-tuned models have one extra **no-object** logit slot at index
+`num_classes`, and RF-DETR itself labels it `"__background__"` in
+`detections.data["class_name"]`. The repo's wrapper ignores that field, so a
+background detection is reported under a phantom class name — `"8"` for the
+8-class civilian model, `"9"` for the 9-class production model.
+
+Measured on the smoke checkpoint: 2 of 13 detections on one frame carried
+class id 8, which RF-DETR reports as `__background__` and the repo's wrapper
+reports as the class `"8"`.
+
+Scope of the impact:
+
+* **Evaluation is unaffected** — `MODEL/compare_detectors.py` keeps only
+  detections whose `class_id` is in `range(len(class_names))`, so background
+  never reaches the COCO mAP.
+* **The live backend is affected** — `Frontend_Backend/backend/server.py`
+  forwards `det["class_name"]`, so the dashboard can show a detection of a
+  class that does not exist.
+
+This is a pre-existing bug in the production detector wrapper; it is not
+introduced by the civilian experiment and it is **not fixed on this branch**.
+It needs its own change on the live path.
+
+---
+
+## 12. Explicitly unresolved
 
 * Which licence actually applies — see §4. The conflict between "CC-BY" on the
   project page and the annotation file's `CC BY-NC-SA 2.0` / `CC BY-NC 2.0`
@@ -364,8 +424,42 @@ names and their SHA-256 digests are recorded in the dataset manifest.
 
 ---
 
-## 12. Next step
+## 13. Next step
 
 Task 5 — the civilian-only baseline. It needs the user's explicit go-ahead:
 a training run on this dataset is GPU-bound and takes hours, and its licence
 status (see §4) is unresolved.
+
+The smoke test in §11 is done and the duration, storage and VRAM figures are
+measured. What is still missing before a full run can start is the decision
+itself: which resolution, how many epochs, and whether to accept the
+non-commercial licence position in §4 for a local, unpublished model.
+
+---
+
+## 14. Commands
+
+```bash
+# 0. environment (Python 3.12, matching CI)
+uv venv --python 3.12 kaal-ml-venv
+VIRTUAL_ENV=$PWD/kaal-ml-venv uv pip install -e "KAAL_v2[ml,dev]"
+
+# 1. acquire (public Google Drive ids, no credentials)
+gdown 1boGF0L6olGe_Nu7rd1R8N7YmQErCb0xA -O MODEL/Datasets/auair/annotations.json
+gdown --continue 1pJ3xfKtHiTdysX5G3dxqKTdGESOBYCxJ -O MODEL/Datasets/auair/frames.zip
+unzip -q MODEL/Datasets/auair/frames.zip -d MODEL/Datasets/auair
+unzip -q MODEL/Datasets/auair/annotations.json -d MODEL/Datasets/auair/extracted
+
+# 2. convert, split by source video, and write the manifest
+python -m MODEL.build_civilian_auair
+
+# 3. audit (read-only)
+python -m MODEL.audit_civilian_dataset --data MODEL/Datasets/auair_civilian \
+    --out MODEL/Datasets/auair_civilian
+
+# 4. train the civilian baseline (not yet run - see §11 and §13)
+python -m MODEL.train_detector --arch rfdetr-small \
+    --data MODEL/Datasets/auair_civilian --epochs 10 --batch 2 --grad-accum 8 \
+    --imgsz 1024 --name auair-civilian-rfdetr-small-v1
+```
+
