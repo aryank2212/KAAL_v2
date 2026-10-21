@@ -43,6 +43,7 @@ Every tracked file, what it does, and its status. Companion to
 | `Docs/DECISIONS.md` | doc | Architecture decision records (detector choice, scorer rewrite, temporal cue, data policy, security). |
 | `Docs/MODEL_CARD.md` | doc | Model card for the production detector: intended use, data, metrics, limitations, ethics. |
 | `Docs/FUTURE_SCALING.md` | doc | Scaling paths to new models, tasks and hardware tiers, with concrete tech stacks. |
+| `Docs/CIVILIAN_AERIAL_DATA.md` | doc | AU-AIR acquisition preflight: upstream source and its current state, download locations, the unresolved licence conflict, verified annotation schema and category order, sequence-grouped split policy, Git-ignore status. Civilian-only; does not touch the production taxonomy. |
 
 ## `MODEL/` — detection, defense, data, training, evaluation
 
