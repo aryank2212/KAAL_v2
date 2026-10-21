@@ -1,4 +1,5 @@
 """Versioned experiment metadata and deterministic reports for KAAL Bench."""
+
 from __future__ import annotations
 import argparse
 import hashlib
@@ -14,7 +15,17 @@ from typing import Any
 SCHEMA_VERSION = 1
 SHA256_RE = re.compile(r"^[0-9a-f]{64}$")
 GIT_SHA_RE = re.compile(r"^[0-9a-f]{40,64}$")
-TOP_KEYS = {"schema_version", "run_id", "git_commit", "model", "dataset", "protocol", "environment", "metrics", "artifacts"}
+TOP_KEYS = {
+    "schema_version",
+    "run_id",
+    "git_commit",
+    "model",
+    "dataset",
+    "protocol",
+    "environment",
+    "metrics",
+    "artifacts",
+}
 
 
 class ManifestValidationError(ValueError):
@@ -31,10 +42,18 @@ def sha256_file(path: str | Path) -> str:
 
 def _git_commit(cwd: str | Path | None = None) -> str | None:
     try:
-        value = subprocess.run(
-            ["git", "rev-parse", "HEAD"], cwd=cwd, check=True,
-            capture_output=True, text=True, timeout=2,
-        ).stdout.strip().lower()
+        value = (
+            subprocess.run(
+                ["git", "rev-parse", "HEAD"],
+                cwd=cwd,
+                check=True,
+                capture_output=True,
+                text=True,
+                timeout=2,
+            )
+            .stdout.strip()
+            .lower()
+        )
     except (OSError, subprocess.SubprocessError):
         return None
     return value if GIT_SHA_RE.fullmatch(value) else None
@@ -72,9 +91,7 @@ def validate_manifest(data: dict[str, Any]) -> None:
         raise ManifestValidationError(f"schema_version must be {SCHEMA_VERSION}")
     _string(data["run_id"], "run_id")
     commit = data["git_commit"]
-    if commit is not None and (
-        not isinstance(commit, str) or not GIT_SHA_RE.fullmatch(commit)
-    ):
+    if commit is not None and (not isinstance(commit, str) or not GIT_SHA_RE.fullmatch(commit)):
         raise ManifestValidationError("git_commit must be a full lowercase Git SHA or null")
 
     model = data["model"]
@@ -113,7 +130,8 @@ def validate_manifest(data: dict[str, Any]) -> None:
     for name, value in metrics.items():
         _string(name, "metric name")
         if value is not None and (
-            isinstance(value, bool) or not isinstance(value, (int, float))
+            isinstance(value, bool)
+            or not isinstance(value, (int, float))
             or not math.isfinite(value)
         ):
             raise ManifestValidationError(f"metrics.{name} must be a finite number or null")
@@ -132,8 +150,14 @@ def validate_manifest(data: dict[str, Any]) -> None:
 
 
 def capture_manifest(
-    *, run_id: str, model_name: str, dataset_id: str, split: str, seed: int,
-    evaluation_version: str = "1", model_weights: str | Path | None = None,
+    *,
+    run_id: str,
+    model_name: str,
+    dataset_id: str,
+    split: str,
+    seed: int,
+    evaluation_version: str = "1",
+    model_weights: str | Path | None = None,
     dataset_manifest: str | Path | None = None,
     metrics: dict[str, float | int | None] | None = None,
     artifacts: list[str | Path] | None = None,
@@ -144,10 +168,13 @@ def capture_manifest(
     for path in sorted((Path(p) for p in (artifacts or [])), key=lambda p: p.as_posix()):
         if not path.is_file():
             raise FileNotFoundError(f"Artifact does not exist or is not a file: {path}")
-        entries.append({
-            "path": path.as_posix(), "sha256": sha256_file(path),
-            "kind": path.suffix.lstrip(".").lower() or "file",
-        })
+        entries.append(
+            {
+                "path": path.as_posix(),
+                "sha256": sha256_file(path),
+                "kind": path.suffix.lstrip(".").lower() or "file",
+            }
+        )
     manifest = {
         "schema_version": SCHEMA_VERSION,
         "run_id": run_id,
@@ -157,12 +184,14 @@ def capture_manifest(
             "weights_sha256": sha256_file(model_weights) if model_weights else None,
         },
         "dataset": {
-            "registry_id": dataset_id, "split": split,
+            "registry_id": dataset_id,
+            "split": split,
             "manifest_sha256": sha256_file(dataset_manifest) if dataset_manifest else None,
         },
         "protocol": {"seed": seed, "evaluation_version": evaluation_version},
         "environment": {
-            "python_version": platform.python_version(), "platform": platform.platform(),
+            "python_version": platform.python_version(),
+            "platform": platform.platform(),
         },
         "metrics": dict(metrics or {}),
         "artifacts": entries,
@@ -173,7 +202,9 @@ def capture_manifest(
 
 def canonical_json(manifest: dict[str, Any]) -> str:
     validate_manifest(manifest)
-    return json.dumps(manifest, ensure_ascii=False, allow_nan=False, sort_keys=True, indent=2) + "\n"
+    return (
+        json.dumps(manifest, ensure_ascii=False, allow_nan=False, sort_keys=True, indent=2) + "\n"
+    )
 
 
 def render_markdown(manifest: dict[str, Any]) -> str:
@@ -181,7 +212,8 @@ def render_markdown(manifest: dict[str, Any]) -> str:
     model, dataset = manifest["model"], manifest["dataset"]
     protocol, env = manifest["protocol"], manifest["environment"]
     lines = [
-        f"# KAAL experiment: {manifest['run_id']}", "",
+        f"# KAAL experiment: {manifest['run_id']}",
+        "",
         f"- **Schema version:** {manifest['schema_version']}",
         f"- **Git commit:** {manifest['git_commit'] or 'unavailable'}",
         f"- **Model:** {model['name']}",
@@ -191,8 +223,12 @@ def render_markdown(manifest: dict[str, Any]) -> str:
         f"- **Seed:** {protocol['seed']}",
         f"- **Evaluation version:** {protocol['evaluation_version']}",
         f"- **Python:** {env['python_version']}",
-        f"- **Platform:** {env['platform']}", "",
-        "## Metrics", "", "| Metric | Value |", "|---|---:|",
+        f"- **Platform:** {env['platform']}",
+        "",
+        "## Metrics",
+        "",
+        "| Metric | Value |",
+        "|---|---:|",
     ]
     if manifest["metrics"]:
         for name in sorted(manifest["metrics"]):
@@ -234,9 +270,14 @@ def main() -> None:
 
     if args.command == "capture":
         result = capture_manifest(
-            run_id=args.run_id, model_name=args.model_name, dataset_id=args.dataset_id,
-            split=args.split, seed=args.seed, evaluation_version=args.evaluation_version,
-            model_weights=args.weights, dataset_manifest=args.dataset_manifest,
+            run_id=args.run_id,
+            model_name=args.model_name,
+            dataset_id=args.dataset_id,
+            split=args.split,
+            seed=args.seed,
+            evaluation_version=args.evaluation_version,
+            model_weights=args.weights,
+            dataset_manifest=args.dataset_manifest,
             repository=args.repository,
         )
         Path(args.output).write_text(canonical_json(result), encoding="utf-8")
