@@ -170,6 +170,7 @@ python -m MODEL.compare_detectors \
 | [`Docs/MODEL_CARD.md`](Docs/MODEL_CARD.md) | production detector: data, metrics, limits, intended use |
 | [`Docs/DECISIONS.md`](Docs/DECISIONS.md) | architecture decision records (RF-DETR, FFT scorer, temporal cue, data policy, security) |
 | [`Docs/FUTURE_SCALING.md`](Docs/FUTURE_SCALING.md) | scaling to new models, tasks and hardware tiers with concrete tech stacks |
+| [`Docs/CIVILIAN_AERIAL_DATA.md`](Docs/CIVILIAN_AERIAL_DATA.md) | AU-AIR civilian aerial data: upstream source, download locations, licence status, verified annotation schema, split policy |
 | [`MODEL/RESULTS.md`](MODEL/RESULTS.md) | every measured result |
 
 ---
